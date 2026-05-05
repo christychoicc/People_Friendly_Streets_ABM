@@ -1,22 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <model version="NetLogo 7.0.3" snapToGrid="true">
   <code><![CDATA[;;
-;; Inclusive Access in People-Friendly Streets
-;; Practical-style version
-;;
-;; One forever GO button:
-;; - click once to run
-;; - click again to stop
-;;
-;; The model does NOT automatically stop when everyone has finished.
-;; This is closer to normal practical NetLogo models.
+;; Inclusive Access in People-Friendly Streets: An Agent-based Model
 ;;
 
 
 globals
 [
-  ;; scenario is created by an Interface chooser.
-  ;; Do not declare scenario here.
+  ;; scenario chooser in Interface
 
   num-healthy
   num-constrained
@@ -482,8 +473,8 @@ to-report can-enter? [target-patch]
     report false
   ]
 
-  ;; Walkers/wheelers can enter restricted patches.
-  ;; The restriction is a car restriction, not a pedestrian restriction.
+  ;; Walking people can enter restricted patches
+  ;; only car restriction, not pedestrian restriction
   if not using-vehicle?
   [
     report true
@@ -495,7 +486,7 @@ to-report can-enter? [target-patch]
     report true
   ]
 
-  ;; People-Friendly Streets: vehicles cannot cross restricted patches.
+  ;; People-Friendly Streets: vehicles cannot cross pass restricted patches (red boundary)
   if scenario = "people-friendly-streets"
   [
     if [restricted?] of target-patch
@@ -506,7 +497,7 @@ to-report can-enter? [target-patch]
     report true
   ]
 
-  ;; Individual Exemption: vehicles can cross only at exemption patches.
+  ;; Individual Exemption: vehicles can cross only at exemption patches (orange patches on red boundary)
   if scenario = "individual-exemption"
   [
     if [restricted?] of target-patch and not [exemption?] of target-patch
@@ -523,7 +514,7 @@ end
 
 
 ;;
-;; BURDEN, ACCESS, FAILURE
+;; burden, access, failure
 ;;
 
 to update-travel-burden
@@ -612,13 +603,15 @@ end
 
 
 to update-appearance
-
+  
+  ; blue = successfully accessed service
   if accessed?
   [
     set color blue
     set size 1
   ]
-
+  
+  ; red = failed / unable to access
   if unable-to-access?
   [
     set color red
@@ -798,7 +791,7 @@ end
 
 
 ;;
-;; FAILURE TYPE REPORTERS
+;; reporters of failure (why failed)
 ;;
 
 to-report mobility-capacity-failures
@@ -924,7 +917,7 @@ end]]></code>
     <view x="368" wrappingAllowedX="false" y="10" frameRate="30.0" minPycor="-16" height="434" showTickCounter="true" patchSize="13.0" fontSize="10" wrappingAllowedY="false" width="434" tickCounterLabel="ticks" maxPycor="16" updateMode="0" maxPxcor="16" minPxcor="-16"></view>
     <button x="30" y="55" height="40" disableUntilTicks="false" forever="false" kind="Observer" width="55">setup</button>
     <button x="30" y="110" height="40" disableUntilTicks="false" forever="true" kind="Observer" width="55">go</button>
-    <chooser x="30" y="165" height="60" variable="scenario" current="2" width="250" display="scenario">
+    <chooser x="30" y="165" height="60" variable="scenario" current="0" width="250" display="scenario">
       <choice type="string" value="baseline"></choice>
       <choice type="string" value="people-friendly-streets"></choice>
       <choice type="string" value="individual-exemption"></choice>
