@@ -1,2 +1,2 @@
-# People_Friendly_Streets_ABM
-CASA0011 Agent-based Modelling for Spatial Systems Individual Project Repository
+# Inclusive Access in People-Friendly Streets: An Agent-based Model
+This is a repository for CASA0011 Agent-based Modelling for Spatial Systems Individual Project Coursework Submission
