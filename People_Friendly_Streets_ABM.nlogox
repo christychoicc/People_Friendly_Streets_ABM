@@ -6,14 +6,14 @@
 
 globals
 [
-  ;; population
-  num-healthy
-  num-constrained
+;   ;; population --> moved to sliders
+;   num-healthy
+;   num-constrained
 
-  ;; capacities
-  healthy-capacity
-  constrained-min-capacity
-  constrained-max-capacity
+;   ;; capacities  --> moved to sliders
+  healthy-capacity 
+;   constrained-min-capacity
+;   constrained-max-capacity
   vehicle-need-threshold
 
   ;; movement speeds
@@ -99,19 +99,43 @@ end
 ;;
 ;; set all default values
 ;;
+; to set-default-values
+
+;   ;; population
+;   set num-healthy 30
+;   set num-constrained 30
+
+;   ;; mobility capacity
+;   set healthy-capacity 200
+;   set constrained-min-capacity 20
+;   set constrained-max-capacity 120
+;   set vehicle-need-threshold 85
+
+;   ;; movement speed, measured as patch-steps per tick
+;   set healthy-speed 2
+;   set constrained-walk-speed 1
+;   set vehicle-speed 3
+
+;   ;; movement burden per patch-step
+;   set healthy-move-cost 1
+;   set constrained-walk-cost 3.5
+;   set vehicle-move-cost 0.5
+
+;   ;; exemption crossing position
+;   set exemption-target-y 8
+
+;   ;; maximum length of one trip episode
+;   set max-ticks 150
+
+; end
 to set-default-values
 
-  ;; population
-  set num-healthy 30
-  set num-constrained 30
+  ;; vehicle need assumption
+  if vehicle-need-level = "low"[set vehicle-need-threshold 60]
+  if vehicle-need-level = "medium"[set vehicle-need-threshold 85]
+  if vehicle-need-level = "high"[set vehicle-need-threshold 110]
 
-  ;; mobility capacity
-  set healthy-capacity 200
-  set constrained-min-capacity 20
-  set constrained-max-capacity 120
-  set vehicle-need-threshold 85
-
-  ;; movement speed, measured as patch-steps per tick
+  ;; movement speed
   set healthy-speed 2
   set constrained-walk-speed 1
   set vehicle-speed 3
@@ -121,10 +145,9 @@ to set-default-values
   set constrained-walk-cost 3.5
   set vehicle-move-cost 0.5
 
-  ;; exemption crossing position
+  ;; fixed model assumptions
+  set healthy-capacity 200
   set exemption-target-y 8
-
-  ;; maximum length of one trip episode
   set max-ticks 150
 
 end
@@ -219,7 +242,8 @@ to setup-people
   ; constrianed people setup 
   create-constrained-residents num-constrained
   [
-    move-to one-of patches with [home? and not any? turtles-here]
+    ; allow multiple people start from the same "home" patch
+    move-to one-of patches with [home?]
 
     set shape "person"
     set color orange
@@ -278,12 +302,14 @@ end
 
 to go
 
+  ; model to stop when people is declared success or failed to reach services
   if all? turtles [accessed? or unable-to-access?]
   [
     update-results
     stop
   ]
 
+  ; model to stop when reached maximum ticks
   if ticks >= max-ticks
   [
     ask turtles with [not accessed? and not unable-to-access?]
@@ -298,8 +324,9 @@ to go
 
   ask turtles with [not accessed? and not unable-to-access?]
   [
+    ; add one to trip time 
     set trip-time trip-time + 1
-
+    
     repeat movement-speed
     [
       if not accessed? and not unable-to-access?
@@ -326,8 +353,7 @@ end
 
 to move-one-step
 
-  ;; In the exemption scenario, vehicle users must first move vertically
-  ;; to reach the exemption crossing.
+  ;; in Exemption scenario, people on vehicle need to move vertically up or down to reach the orange Exemption crossing
   if scenario = "individual-exemption"
   [
     if using-vehicle? and pxcor = -1 and pycor != exemption-target-y
@@ -399,7 +425,9 @@ to move-towards-exemption
 
 end
 
-
+;;
+;; rules for people to move
+;;
 to-report can-enter? [target-patch]
 
   ;; people walking can enter the restricted area cus restriction is for vehicles only
@@ -447,9 +475,10 @@ end
 
 
 ;;
-;; burden, access, failure to reach services
+;; rules for burden, sucessfully accessed, failure to reach services
 ;;
 
+;; burden
 to add-travel-burden
 
   if using-vehicle?
@@ -472,7 +501,7 @@ to add-travel-burden
 
 end
 
-
+;; sucessfully accessed
 to check-access
 
   if [service?] of patch-here
@@ -483,7 +512,7 @@ to check-access
 
 end
 
-
+;; failure to reach services
 to check-failure
 
   if not accessed?
@@ -496,7 +525,7 @@ to check-failure
 
 end
 
-
+;; set outlooks appearance colour of their ending
 to update-appearance
 
   if accessed?
@@ -513,7 +542,7 @@ end
 
 
 ;;
-;; results (like reporters vibes) 
+;; results - set calculations 
 ;;
 
 to update-results
@@ -593,21 +622,30 @@ to calculate-access-score
 end]]></code>
   <widgets>
     <view x="368" wrappingAllowedX="false" y="10" frameRate="30.0" minPycor="-16" height="435" showTickCounter="true" patchSize="13.0" fontSize="10" wrappingAllowedY="false" width="435" tickCounterLabel="ticks" maxPycor="16" updateMode="0" maxPxcor="16" minPxcor="-16"></view>
-    <chooser x="25" y="75" height="60" variable="scenario" current="2" width="250" display="scenario">
+    <button x="25" y="10" height="40" disableUntilTicks="false" forever="false" kind="Observer" width="55">setup</button>
+    <button x="85" y="10" height="40" disableUntilTicks="false" forever="true" kind="Observer" width="55">go</button>
+    <chooser x="150" y="10" height="60" variable="scenario" current="2" width="210" display="scenario">
       <choice type="string" value="baseline"></choice>
       <choice type="string" value="people-friendly-streets"></choice>
       <choice type="string" value="individual-exemption"></choice>
     </chooser>
-    <monitor x="25" precision="17" y="145" height="60" fontSize="11" width="100" display="healthy-access-rate">healthy-access-rate</monitor>
-    <button x="25" y="25" height="40" disableUntilTicks="false" forever="false" kind="Observer" width="55">setup</button>
-    <button x="85" y="25" height="40" disableUntilTicks="false" forever="true" kind="Observer" width="55">go</button>
-    <monitor x="135" precision="17" y="145" height="60" fontSize="11" width="100" display="constrained-access-rate">constrained-access-rate</monitor>
-    <monitor x="245" precision="17" y="145" height="60" fontSize="11" width="100" display="access-rate-gap">access-rate-gap</monitor>
-    <monitor x="25" precision="17" y="210" height="60" fontSize="11" width="100" display="mean-accessibility-constrained">mean-accessibility-constrained</monitor>
-    <monitor x="135" precision="17" y="210" height="60" fontSize="11" width="100" display="mean-accessibility-healthy">mean-accessibility-healthy</monitor>
-    <monitor x="245" precision="17" y="210" height="60" fontSize="11" width="100" display="mean-burden-constrained">mean-burden-constrained</monitor>
-    <monitor x="25" precision="17" y="275" height="60" fontSize="11" width="100" display="accessibility-inequality">accessibility-inequality</monitor>
-    <monitor x="135" precision="17" y="275" height="60" fontSize="11" width="100" display="mean-detour-constrained">mean-detour-constrained</monitor>
+    <monitor x="25" precision="17" y="75" height="60" fontSize="11" width="100" display="healthy-access-rate">healthy-access-rate</monitor>
+    <monitor x="135" precision="17" y="75" height="60" fontSize="11" width="100" display="constrained-access-rate">constrained-access-rate</monitor>
+    <monitor x="245" precision="17" y="75" height="60" fontSize="11" width="100" display="access-rate-gap">access-rate-gap</monitor>
+    <monitor x="25" precision="17" y="140" height="60" fontSize="11" width="100" display="mean-accessibility-constrained">mean-accessibility-constrained</monitor>
+    <monitor x="135" precision="17" y="140" height="60" fontSize="11" width="100" display="mean-accessibility-healthy">mean-accessibility-healthy</monitor>
+    <monitor x="245" precision="17" y="140" height="60" fontSize="11" width="100" display="mean-burden-constrained">mean-burden-constrained</monitor>
+    <monitor x="25" precision="17" y="205" height="60" fontSize="11" width="100" display="accessibility-inequality">accessibility-inequality</monitor>
+    <monitor x="135" precision="17" y="205" height="60" fontSize="11" width="100" display="mean-detour-constrained">mean-detour-constrained</monitor>
+    <slider x="25" step="1" y="270" max="100" width="250" display="num-healthy" height="50" min="0" direction="Horizontal" default="70.0" variable="num-healthy"></slider>
+    <slider x="25" step="1" y="325" max="100" width="250" display="num-constrained" height="50" min="0" direction="Horizontal" default="30.0" variable="num-constrained"></slider>
+    <slider x="25" step="1" y="380" max="100" width="250" display="constrained-min-capacity" height="50" min="0" direction="Horizontal" default="20.0" variable="constrained-min-capacity"></slider>
+    <slider x="25" step="1" y="435" max="100" width="250" display="constrained-max-capacity" height="50" min="0" direction="Horizontal" default="80.0" variable="constrained-max-capacity"></slider>
+    <chooser x="25" y="490" height="60" variable="vehicle-need-level" current="0" width="250" display="vehicle-need-level">
+      <choice type="string" value="low"></choice>
+      <choice type="string" value="medium"></choice>
+      <choice type="string" value="high"></choice>
+    </chooser>
   </widgets>
   <info>## WHAT IS IT?
 
