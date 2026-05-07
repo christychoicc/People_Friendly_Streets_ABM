@@ -11,7 +11,6 @@ globals
   constrained-move-cost             ;; movement burden per step for constrained people
   vehicle-move-cost                 ;; movement burden per step for vehicle
   exemption-target-y                ;; y-coord of the orange exemption patch
-  max-active-people                 ;; maximum number of people active in the world
   healthy-done                      ;; number of completed journey (success/ failed) to services by healthy people
   constrained-done                  ;; number of completed journey (success/ failed) to services by constrianed people
   healthy-accessed                  ;; number of sucessfully accessed services by healthy people
@@ -64,7 +63,9 @@ to setup
   reset-ticks        ;; reset to 0 ticks
 end
 
-
+;;
+;; set default values
+;; 
 to set-defaults
 
   set healthy-capacity 200
@@ -74,7 +75,6 @@ to set-defaults
   set vehicle-move-cost 0.5
 
   set exemption-target-y 0
-  set max-active-people 45
 
   set access-scores []
 
@@ -87,84 +87,95 @@ end
 
 to setup-patches
 
+  ;; patches at start
+  ;; patches are set as boolean false initially and will be build on top
   ask patches
   [
-    set home? false
+    set home? false  
     set service? false
     set restricted? false
     set exemption? false
     set road? false
-    set pcolor gray - 2
+    set pcolor gray - 2              ;; background patches as dark grey
   ]
 
-  let left-road-x -16
-  let center-road-x 0
+  ;; set x coords for vertical roads 
+  let left-road-x -16     
+  let center-road-x 0  
   let right-road-x 16
 
-  let top-road-y 12
-  let middle-road-y 0
-  let bottom-road-y -12
+  ;; set y coords for horizontal roads
+  let top-road-y 12 
+  let middle-road-y 0  
+  let bottom-road-y -12 
 
-  let road-half-width 1
-  let terminal-width 2
+  ;; road widths
+  let road-half-width 1               ;; for road width - 1 = 3 patches
+  let zone-width 2                    ;; for zones of homes and services width - 2 = 6 patches
 
+  ;; road network
+  ;; patches that are within the widths of the set vertical/ horizontal coords will become a road
   ask patches with
   [
-    abs (pycor - top-road-y) <= road-half-width or
-    abs (pycor - middle-road-y) <= road-half-width or
-    abs (pycor - bottom-road-y) <= road-half-width or
-    abs (pxcor - left-road-x) <= road-half-width or
-    abs (pxcor - center-road-x) <= road-half-width or
-    abs (pxcor - right-road-x) <= road-half-width
+    abs (pycor - top-road-y) <= road-half-width or          ;; close to top horizontal road 
+    abs (pycor - middle-road-y) <= road-half-width or       ;; close to middle horizontal road 
+    abs (pycor - bottom-road-y) <= road-half-width or       ;; close to bottom horizontal road 
+    abs (pxcor - left-road-x) <= road-half-width or         ;; close to left vertical road 
+    abs (pxcor - center-road-x) <= road-half-width or       ;; close to centre vertical road 
+    abs (pxcor - right-road-x) <= road-half-width           ;; close to right vertical road 
   ]
   [
     set road? true
-    set pcolor gray + 1
+    set pcolor gray + 1                ;; roads patches will be painted as light grey
   ]
 
+  ;; create patches as home to be on left side of the world
   ask patches with
   [
-    road? and
-    pxcor >= min-pxcor and
-    pxcor <= min-pxcor + terminal-width
+    road? and                             ;; is a road
+    pxcor >= min-pxcor and                ;; be right of the min x coord (closest)
+    pxcor <= min-pxcor + zone-width       ;; be within the zone width
   ]
   [
-    set home? true
+    set home? true                        ;; mark as home patch
   ]
 
+  ;; create patches as services to be on right side of world
   ask patches with
   [
-    road? and
-    pxcor <= max-pxcor and
-    pxcor >= max-pxcor - terminal-width
+    road? and                             ;; is a road
+    pxcor <= max-pxcor and                ;; be left of the max x coord (furthest)
+    pxcor >= max-pxcor - zone-width       ;; be within the zone width
   ]
   [
-    set service? true
+    set service? true                     ;; mark as service patch
   ]
 
+  ;; create patches for a restriction (represent PFS) boundary in the center of vertical road of world
   ask patches with
   [
-    pxcor = center-road-x and
-    pycor >= bottom-road-y and
-    pycor <= top-road-y
+    pxcor = center-road-x and             ;; be in the x coord center 
+    pycor >= bottom-road-y and            ;; be above or equals to the y coord of bottom road
+    pycor <= top-road-y                   ;; be below or equals to the y coord of top road
   ]
   [
-    set restricted? true
-    set pcolor red
+    set restricted? true                  ;; mark as restricted patch
+    set pcolor red                        ;; colour painted patch as red
   ]
 
-  ;; individual exemption patches add orange exemption patches
+  ;; if scenario for individual exemption is selected: 
+  ;; add orange exemption patches representing exemption 
   if scenario = "individual-exemption"
   [
     ask patches with
     [
-      pxcor = center-road-x and
-      pycor >= exemption-target-y - 1 and
-      pycor <= exemption-target-y + 1
+      pxcor = center-road-x and                ;; be in the x coord center
+      pycor >= exemption-target-y - 1 and      ;; be above or equals to 1 patch below the exemption target
+      pycor <= exemption-target-y + 1          ;; be below or equals to 1 patch above the exemption target
     ]
     [
-      set exemption? true
-      set pcolor orange
+      set exemption? true                      ;; mark as exemption patch
+      set pcolor orange                        ;; colour painted patch as orange
     ]
   ]
 
@@ -174,34 +185,38 @@ end
 ;;
 ;; to go
 ;;
-
 to go
-
+  ;; when turtles people die and its results has been recorded, mission is finished remove from the world 
   ask turtles with [unable-to-access? and recorded?]
   [
     die
   ]
 
+  ;; create new healthy and constrained people entering the world from home patch
   create-access-flow
 
+  ;; movement for people who have not accessed and not failed to reach the services yet
   ask turtles with [not accessed? and not unable-to-access?]
   [
-    move-one-step
-    check-access
-    check-failure
+    move-one-step                     ;; move one step each time 
+    check-access                      ;; check if the people accessed the services patches
+    check-failure                     ;; check if the people failed to reach the services patches
   ]
 
+  ;; ask if turtle have accessed services? if so leave the world 
   ask turtles with [accessed?]
   [
-    leave-after-access
+    leave-after-access   
   ]
 
+  ;; ask if turtle unable to access services and have not been recorded (out of mobility capacity)? if so change colour as red and record result
   ask turtles with [unable-to-access? and not recorded?]
   [
-    set color red
-    record-result
+    set color red                     ;; people change colour as red
+    record-result                     ;; record result of failure to reach services
   ]
 
+  ;; simulation moves forward in time by one tick ...
   tick
 
 end
@@ -211,18 +226,19 @@ end
 ;; flow
 ;;
 
+;; to check how many people are currently active in the world
 to create-access-flow
-
+  ;; if count exceed maximum active people, the procedure will stop
   if count turtles >= max-active-people
   [
     stop
   ]
-
+  ;; create healthy people entering the world, the proportion flow is according to the healthy-access-flow slider in Interface
   repeat people-from-flow healthy-access-flow
   [
     create-person "healthy"
   ]
-
+  ;; create constrained people entering the world, the proportion flow is according to the constrained-access-flow slide in Interface
   repeat people-from-flow constrained-access-flow
   [
     create-person "constrained"
@@ -246,14 +262,15 @@ end
 
 
 to create-person [person-type]
-
+  ;; create a person under rules where it is a home, road and no other turtle patch
   let starts patches with [home? and road? and not any? turtles-here]
-
+  ;; if no free patches do not create a people
   if not any? starts
   [
     stop
   ]
 
+  ;; healthy 
   if person-type = "healthy"
   [
     create-healthy-peoples 1
@@ -262,13 +279,16 @@ to create-person [person-type]
     ]
   ]
 
+  ;; constrained 
   if person-type = "constrained"
   [
+    ;; create the constrained people
     create-constrained-peoples 1
     [
+      ;; the value of capacity will be chosen (any value randomly) between min and max capacity slider on Interface
       let cap constrained-min-capacity +
         random-float (constrained-max-capacity - constrained-min-capacity)
-
+      ;; the constrained person will be featured appearance as orange
       initialise-person one-of starts orange cap
     ]
   ]
@@ -278,24 +298,24 @@ end
 
 to initialise-person [start-patch start-color capacity]
 
+  ;; initial people start at starting patch 
   move-to start-patch
 
+  ;; set outlook appearance of the people agents
   set shape "person"
-  set size 1.2
+  set size 1
   set color start-color
-  set heading 90
-
-  set mobility-capacity capacity
-  set travel-burden 0
-  set access-score 0
-
-  set accessed? false
-  set unable-to-access? false
-  set recorded? false
-
-  set using-vehicle? false
-  set eligible-exemption? false
-
+  set heading 90                          ;; facing direction
+  
+  set mobility-capacity capacity          ;; set a mobility capacity
+  set travel-burden 0                     ;; travel burden is set at 0 at start
+  set access-score 0                      ;; access score is set at 0 at start
+  set accessed? false                     ;; assessed boolean set as false at start
+  set unable-to-access? false             ;; unable to access boolean set as false at start
+  set recorded? false                     ;; recorded boolean set as false at start as has not recorded yet
+  set using-vehicle? false                ;; vehicle usage boolean set as false at start
+  set eligible-exemption? false           ;; eligibility boolean set as false at start
+  
   ;; assume healthy people have 80% chance of using vehicle under baseline scenario
   if breed = healthy-peoples
   [
@@ -684,23 +704,15 @@ to-report accessibility-gini
 
 end]]></code>
   <widgets>
-    <view x="368" wrappingAllowedX="false" y="10" frameRate="30.0" minPycor="-15" height="469" showTickCounter="true" patchSize="15.0" fontSize="10" wrappingAllowedY="false" width="469" tickCounterLabel="ticks" maxPycor="15" updateMode="0" maxPxcor="15" minPxcor="-15"></view>
+    <view x="410" wrappingAllowedX="false" y="20" frameRate="30.0" minPycor="-15" height="469" showTickCounter="true" patchSize="15.0" fontSize="10" wrappingAllowedY="false" width="469" tickCounterLabel="ticks" maxPycor="15" updateMode="0" maxPxcor="15" minPxcor="-15"></view>
     <button x="25" y="20" height="40" disableUntilTicks="false" forever="false" kind="Observer" width="55">setup</button>
     <button x="85" y="20" height="40" disableUntilTicks="false" forever="true" kind="Observer" width="55">go</button>
-    <plot x="845" autoPlotX="true" yMax="1.0" autoPlotY="true" y="10" xMin="0.0" height="175" legend="false" xMax="150.0" yMin="0.0" width="230" display="gini over time">
-      <setup></setup>
-      <update></update>
-      <pen interval="1.0" mode="0" display="pen-1" color="-7500403" legend="true">
-        <setup></setup>
-        <update>plot accessibility-gini</update>
-      </pen>
-    </plot>
     <chooser x="25" y="70" height="60" variable="scenario" current="2" width="210" display="scenario">
       <choice type="string" value="baseline"></choice>
       <choice type="string" value="people-friendly-streets"></choice>
       <choice type="string" value="individual-exemption"></choice>
     </chooser>
-    <slider x="25" step="0.1" y="135" max="1" width="250" display="healthy-access-flow" height="50" min="0" direction="Horizontal" default="1.0" variable="healthy-access-flow"></slider>
+    <slider x="25" step="0.1" y="135" max="1" width="250" display="healthy-access-flow" height="50" min="0" direction="Horizontal" default="0.6" variable="healthy-access-flow"></slider>
     <slider x="25" step="0.1" y="190" max="1" width="250" display="constrained-access-flow" height="50" min="0" direction="Horizontal" default="0.4" variable="constrained-access-flow"></slider>
     <slider x="25" step="1" y="245" max="200" width="250" display="constrained-min-capacity" height="50" min="0" direction="Horizontal" default="20.0" variable="constrained-min-capacity"></slider>
     <slider x="25" step="1" y="300" max="200" width="250" display="constrained-max-capacity" height="50" min="0" direction="Horizontal" default="100.0" variable="constrained-max-capacity"></slider>
@@ -709,6 +721,16 @@ end]]></code>
     <monitor x="235" precision="17" y="420" height="60" fontSize="11" width="100">accessibility-gini</monitor>
     <monitor x="25" precision="17" y="485" height="60" fontSize="11" width="100" display="access-rate-gap">access-rate-gap</monitor>
     <monitor x="130" precision="17" y="485" height="60" fontSize="11" width="100">burden-gap</monitor>
+    <slider x="25" step="1" y="355" max="100" width="250" display="max-active-people" height="50" min="0" direction="Horizontal" default="50.0" variable="max-active-people"></slider>
+    <plot x="930" autoPlotX="true" yMax="1.0" autoPlotY="true" y="20" xMin="0.0" height="175" legend="false" xMax="150.0" yMin="0.0" width="230" display="gini over time">
+      <setup></setup>
+      <update></update>
+      <pen interval="1.0" mode="0" display="pen-1" color="-7500403" legend="true">
+        <setup></setup>
+        <update>plot accessibility-gini</update>
+      </pen>
+    </plot>
+    <note x="280" y="355" backgroundDark="0" fontSize="12" width="130" markdown="false" height="50" textColorDark="-1" textColorLight="-16777216" backgroundLight="0">Adjust the slider for testing demand/ overcrowding levels </note>
   </widgets>
   <info>## WHAT IS IT?
 
