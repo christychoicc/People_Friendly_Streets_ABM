@@ -4,54 +4,44 @@
 ;; Inclusive Access in People-Friendly Streets
 ;;
 
-;; global variables
 globals
 [
-  healthy-capacity
-  vehicle-need-threshold
-
-  healthy-move-cost
-  constrained-move-cost
-  vehicle-move-cost
-
-  exemption-target-y
-  max-active-people
-
-  healthy-done
-  constrained-done
-
-  healthy-accessed
-  constrained-accessed
-
-  healthy-burden-sum
-  constrained-burden-sum
-
-  healthy-score-sum
-  constrained-score-sum
-
-  eligible-done
-  eligible-accessed
-
-  access-scores
+  healthy-capacity                  ;; mobility capacity for healthy people
+  healthy-move-cost                 ;; movement burden per step for healthy people
+  constrained-move-cost             ;; movement burden per step for constrained people
+  vehicle-move-cost                 ;; movement burden per step for vehicle
+  exemption-target-y                ;; y-coord of the orange exemption patch
+  max-active-people                 ;; maximum number of people active in the world
+  healthy-done                      ;; number of completed journey (success/ failed) to services by healthy people
+  constrained-done                  ;; number of completed journey (success/ failed) to services by constrianed people
+  healthy-accessed                  ;; number of sucessfully accessed services by healthy people
+  constrained-accessed              ;; number of sucessfully accessed services by constrained people
+  healthy-burden-total              ;; total travel burden for healthy people
+  constrained-burden-total          ;; total travel burden for constrained people
+  healthy-score-sum                 ;; accessibility score for healthy people
+  constrained-score-sum             ;; accessibility score for constrained people
+  eligible-done                     ;; number of exemption elegible people completed journey to services
+  eligible-accessed                 ;; number of exemption elegible people successfully accessed services
+  access-scores                     ;; 
 ]
 
-breed [healthy-peoples healthy-people]
-breed [constrained-peoples constrained-people]
 
-;; turtle variables
+breed [healthy-peoples healthy-people]                ;; healthy people(s)
+breed [constrained-peoples constrained-people]        ;; constrained people(s)
+
+
 turtles-own
 [
-  mobility-capacity
-  travel-burden
-  access-score
-
-  accessed?
-  unable-to-access?
-  recorded?
-
-  using-vehicle?
-  eligible-exemption?
+  mobility-capacity                 ;; numbers - mobility capacity of a people
+  travel-burden                     ;; numbers - travel burden of a people
+  access-score                      ;; numbers 0-100 - accessibility score of a people
+  accessed?                         ;; boolean - whether the people accessed services
+  unable-to-access?                 ;; boolean - whether the people failed to access services
+  recorded?                         ;; boolean - whether results have been recorded
+  using-vehicle?                    ;; boolean - whether the people were travelled with vehicle
+  eligible-exemption?               ;; boolean - whether the people were eligible for exemption
 ]
+
 
 patches-own
 [
@@ -64,22 +54,18 @@ patches-own
 
 
 ;;
-;; to setup
+;; to setup (start of simulation setup)
 ;;
 
 to setup
-  clear-all
-  set-defaults
-  setup-patches
-  reset-ticks
+  ca                 ;; clear all
+  set-defaults       ;; set the pre-defined default values
+  setup-patches      ;; setup world
+  reset-ticks        ;; reset to 0 ticks
 end
 
 
 to set-defaults
-
-  if vehicle-need-level = "low"    [ set vehicle-need-threshold 60 ]
-  if vehicle-need-level = "medium" [ set vehicle-need-threshold 85 ]
-  if vehicle-need-level = "high"   [ set vehicle-need-threshold 110 ]
 
   set healthy-capacity 200
 
@@ -167,6 +153,7 @@ to setup-patches
     set pcolor red
   ]
 
+  ;; individual exemption patches add orange exemption patches
   if scenario = "individual-exemption"
   [
     ask patches with
@@ -185,7 +172,7 @@ end
 
 
 ;;
-;; to go 
+;; to go
 ;;
 
 to go
@@ -221,7 +208,7 @@ end
 
 
 ;;
-;; create people
+;; flow
 ;;
 
 to create-access-flow
@@ -309,35 +296,35 @@ to initialise-person [start-patch start-color capacity]
   set using-vehicle? false
   set eligible-exemption? false
 
+  ;; assume healthy people have 80% chance of using vehicle under baseline scenario
   if breed = healthy-peoples
   [
     if scenario = "baseline" and random 100 < 80
     [
-      set using-vehicle? true
+      set using-vehicle? true       ; yes use vehicle
     ]
   ]
 
+  ;; constrained people to use vehicle when mobility capacity is below vehicle need threshold
   if breed = constrained-peoples
   [
-    let needs-vehicle? mobility-capacity < vehicle-need-threshold
-
+    ;; constrained people can use cars to access services under basline
     if scenario = "baseline"
     [
-      set using-vehicle? needs-vehicle?
+      set using-vehicle? true        ; yes use vehicle
     ]
-
+    ;; constrained people are allowed to use cars through exemption under individual exemption
     if scenario = "individual-exemption"
     [
-      set eligible-exemption? needs-vehicle?
-      set using-vehicle? needs-vehicle?
+      set eligible-exemption? true   ; yes exemption
+      set using-vehicle? true        ; yes use vehicle
     ]
   ]
-
 end
 
 
 ;;
-;; people movements
+;; movement 
 ;;
 
 to move-one-step
@@ -395,7 +382,13 @@ to move-towards-exemption
     set heading 180
   ]
 
-  if target = nobody or not can-enter? target
+  if target = nobody
+  [
+    set unable-to-access? true
+    stop
+  ]
+
+  if not can-enter? target
   [
     set unable-to-access? true
     stop
@@ -426,7 +419,7 @@ end
 
 
 ;;
-;; ACCESS RULES
+;; access rules
 ;;
 
 to-report can-enter? [target]
@@ -448,7 +441,12 @@ to-report can-enter? [target]
 
   if scenario = "people-friendly-streets"
   [
-    report not [restricted?] of target
+    if [restricted?] of target
+    [
+      report false
+    ]
+
+    report true
   ]
 
   if scenario = "individual-exemption"
@@ -467,7 +465,7 @@ end
 
 
 ;;
-;; burden and accessed
+;; define burden and access
 ;;
 
 to add-burden
@@ -546,7 +544,7 @@ to record-result
       set healthy-accessed healthy-accessed + 1
     ]
 
-    set healthy-burden-sum healthy-burden-sum + travel-burden
+    set healthy-burden-total healthy-burden-total + travel-burden
     set healthy-score-sum healthy-score-sum + access-score
   ]
 
@@ -569,7 +567,7 @@ to record-result
       ]
     ]
 
-    set constrained-burden-sum constrained-burden-sum + travel-burden
+    set constrained-burden-total constrained-burden-total + travel-burden
     set constrained-score-sum constrained-score-sum + access-score
   ]
 
@@ -584,70 +582,93 @@ end
 ;;
 
 to-report healthy-access-rate
-  if healthy-done = 0 [ report 0 ]
+  if healthy-done = 0
+  [
+    report 0
+  ]
   report 100 * healthy-accessed / healthy-done
+
 end
 
 
 to-report constrained-access-rate
-  if constrained-done = 0 [ report 0 ]
+  if constrained-done = 0
+  [
+    report 0
+  ]
   report 100 * constrained-accessed / constrained-done
+  
 end
 
 
 to-report access-rate-gap
   report healthy-access-rate - constrained-access-rate
-end
-
-
-to-report mean-burden-healthy
-  if healthy-done = 0 [ report 0 ]
-  report healthy-burden-sum / healthy-done
-end
-
-
-to-report mean-burden-constrained
-  if constrained-done = 0 [ report 0 ]
-  report constrained-burden-sum / constrained-done
+  
 end
 
 
 to-report burden-gap
-  report mean-burden-constrained - mean-burden-healthy
-end
+  let healthy-burden 0
+  let constrained-burden 0
 
+  if healthy-done > 0
+  [
+    set healthy-burden healthy-burden-total / healthy-done
+  ]
 
-to-report mean-accessibility-healthy
-  if healthy-done = 0 [ report 0 ]
-  report healthy-score-sum / healthy-done
-end
+  if constrained-done > 0
+  [
+    set constrained-burden constrained-burden-total / constrained-done
+  ]
+  
+  report constrained-burden - healthy-burden
 
-
-to-report mean-accessibility-constrained
-  if constrained-done = 0 [ report 0 ]
-  report constrained-score-sum / constrained-done
 end
 
 
 to-report accessibility-inequality
-  report mean-accessibility-healthy - mean-accessibility-constrained
+  let healthy-score 0
+  let constrained-score 0
+
+  if healthy-done > 0
+  [
+    set healthy-score healthy-score-sum / healthy-done
+  ]
+
+  if constrained-done > 0
+  [
+    set constrained-score constrained-score-sum / constrained-done
+  ]
+
+  report healthy-score - constrained-score
+
 end
 
 
 to-report exemption-uptake-rate
-  if eligible-done = 0 [ report 0 ]
+  if eligible-done = 0
+  [
+    report 0
+  ]
+
   report 100 * eligible-accessed / eligible-done
+
 end
 
 
 to-report accessibility-gini
-
   let scores sort access-scores
   let n length scores
   let total sum scores
+  if n = 0
+  [
+    report 0
+  ]
 
-  if n = 0 [ report 0 ]
-  if total = 0 [ report 0 ]
+  if total = 0
+  [
+    report 0
+  ]
 
   let weighted-sum 0
   let i 1
@@ -664,30 +685,9 @@ to-report accessibility-gini
 end]]></code>
   <widgets>
     <view x="368" wrappingAllowedX="false" y="10" frameRate="30.0" minPycor="-15" height="469" showTickCounter="true" patchSize="15.0" fontSize="10" wrappingAllowedY="false" width="469" tickCounterLabel="ticks" maxPycor="15" updateMode="0" maxPxcor="15" minPxcor="-15"></view>
-    <button x="25" y="10" height="40" disableUntilTicks="false" forever="false" kind="Observer" width="55">setup</button>
-    <button x="85" y="10" height="40" disableUntilTicks="false" forever="true" kind="Observer" width="55">go</button>
-    <chooser x="150" y="10" height="60" variable="scenario" current="0" width="210" display="scenario">
-      <choice type="string" value="baseline"></choice>
-      <choice type="string" value="people-friendly-streets"></choice>
-      <choice type="string" value="individual-exemption"></choice>
-    </chooser>
-    <monitor x="25" precision="17" y="75" height="60" fontSize="11" width="100" display="healthy-access-rate">healthy-access-rate</monitor>
-    <monitor x="135" precision="17" y="75" height="60" fontSize="11" width="100" display="constrained-access-rate">constrained-access-rate</monitor>
-    <slider x="25" step="1" y="380" max="200" width="250" display="constrained-min-capacity" height="50" min="0" direction="Horizontal" default="20.0" variable="constrained-min-capacity"></slider>
-    <slider x="25" step="1" y="435" max="200" width="250" display="constrained-max-capacity" height="50" min="0" direction="Horizontal" default="100.0" variable="constrained-max-capacity"></slider>
-    <chooser x="25" y="490" height="60" variable="vehicle-need-level" current="0" width="250" display="vehicle-need-level">
-      <choice type="string" value="low"></choice>
-      <choice type="string" value="medium"></choice>
-      <choice type="string" value="high"></choice>
-    </chooser>
-    <monitor x="25" precision="17" y="140" height="60" fontSize="11" width="100">mean-accessibility-healthy</monitor>
-    <monitor x="135" precision="17" y="140" height="60" fontSize="11" width="100">mean-accessibility-constrained</monitor>
-    <monitor x="135" precision="17" y="205" height="60" fontSize="11" width="100" display="mean-burden-constrained">mean-burden-constrained</monitor>
-    <monitor x="25" precision="17" y="205" height="60" fontSize="11" width="100">mean-burden-healthy</monitor>
-    <monitor x="240" precision="17" y="205" height="60" fontSize="11" width="100">burden-gap</monitor>
-    <monitor x="240" precision="17" y="140" height="60" fontSize="11" width="100" display="access-rate-gap">access-rate-gap</monitor>
-    <monitor x="240" precision="17" y="75" height="60" fontSize="11" width="100">exemption-uptake-rate</monitor>
-    <plot x="1130" autoPlotX="true" yMax="1.0" autoPlotY="true" y="10" xMin="0.0" height="175" legend="false" xMax="150.0" yMin="0.0" width="230" display="gini over time">
+    <button x="25" y="20" height="40" disableUntilTicks="false" forever="false" kind="Observer" width="55">setup</button>
+    <button x="85" y="20" height="40" disableUntilTicks="false" forever="true" kind="Observer" width="55">go</button>
+    <plot x="845" autoPlotX="true" yMax="1.0" autoPlotY="true" y="10" xMin="0.0" height="175" legend="false" xMax="150.0" yMin="0.0" width="230" display="gini over time">
       <setup></setup>
       <update></update>
       <pen interval="1.0" mode="0" display="pen-1" color="-7500403" legend="true">
@@ -695,9 +695,20 @@ end]]></code>
         <update>plot accessibility-gini</update>
       </pen>
     </plot>
-    <monitor x="1010" precision="17" y="15" height="60" fontSize="11" width="100">accessibility-gini</monitor>
-    <slider x="25" step="0.1" y="270" max="1" width="250" display="healthy-access-flow" height="50" min="0" direction="Horizontal" default="1.0" variable="healthy-access-flow"></slider>
-    <slider x="25" step="0.1" y="325" max="1" width="250" display="constrained-access-flow" height="50" min="0" direction="Horizontal" default="0.4" variable="constrained-access-flow"></slider>
+    <chooser x="25" y="70" height="60" variable="scenario" current="2" width="210" display="scenario">
+      <choice type="string" value="baseline"></choice>
+      <choice type="string" value="people-friendly-streets"></choice>
+      <choice type="string" value="individual-exemption"></choice>
+    </chooser>
+    <slider x="25" step="0.1" y="135" max="1" width="250" display="healthy-access-flow" height="50" min="0" direction="Horizontal" default="1.0" variable="healthy-access-flow"></slider>
+    <slider x="25" step="0.1" y="190" max="1" width="250" display="constrained-access-flow" height="50" min="0" direction="Horizontal" default="0.4" variable="constrained-access-flow"></slider>
+    <slider x="25" step="1" y="245" max="200" width="250" display="constrained-min-capacity" height="50" min="0" direction="Horizontal" default="20.0" variable="constrained-min-capacity"></slider>
+    <slider x="25" step="1" y="300" max="200" width="250" display="constrained-max-capacity" height="50" min="0" direction="Horizontal" default="100.0" variable="constrained-max-capacity"></slider>
+    <monitor x="25" precision="17" y="420" height="60" fontSize="11" width="100" display="healthy-access-rate">healthy-access-rate</monitor>
+    <monitor x="130" precision="17" y="420" height="60" fontSize="11" width="100" display="constrained-access-rate">constrained-access-rate</monitor>
+    <monitor x="235" precision="17" y="420" height="60" fontSize="11" width="100">accessibility-gini</monitor>
+    <monitor x="25" precision="17" y="485" height="60" fontSize="11" width="100" display="access-rate-gap">access-rate-gap</monitor>
+    <monitor x="130" precision="17" y="485" height="60" fontSize="11" width="100">burden-gap</monitor>
   </widgets>
   <info>## WHAT IS IT?
 
