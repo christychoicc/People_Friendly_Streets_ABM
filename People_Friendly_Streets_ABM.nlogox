@@ -4,44 +4,41 @@
 ;; Inclusive Access in People-Friendly Streets
 ;;
 
+;; global variables
 globals
 [
-  healthy-capacity 
+  healthy-capacity
   vehicle-need-threshold
 
-  ;; movement burden
   healthy-move-cost
-  constrained-walk-cost
+  constrained-move-cost
   vehicle-move-cost
 
-  ;; world design
   exemption-target-y
-  max-ticks
+  max-active-people
 
-  ;; outputs
-  healthy-access-rate                     ; percentage of healthy people who reached services
-  constrained-access-rate                 ; percentage of constrianed people who reached services
-  access-rate-gap                         ; gap calculated: healthy-access-rate - constrained-access-rate
+  healthy-done
+  constrained-done
 
-  mean-burden-healthy                     ; average travel burden experienced by healthy people 
-  mean-burden-constrained                 ; average travel burden experienced by constrained people 
-  burden-gap                              ; gap calculated: mean-burden-constrained - mean-burden-healthy
+  healthy-accessed
+  constrained-accessed
 
-  mean-accessibility-healthy              ; average accessibility score for health people
-  mean-accessibility-constrained          ; average accessibility score for constrained people
-  accessibility-inequality                ; inequality calculated: mean-accessibility-healthy - mean-accessibility-constrained
+  healthy-burden-sum
+  constrained-burden-sum
 
-  mean-detour-constrained                 ; average detour (moving up/ down) for constrained people to move to the exemption
+  healthy-score-sum
+  constrained-score-sum
 
-  accessibility-gini                      ; gini coefficient across all residents access scores: 0 = perfect equality, 1 = maximum inequality
-  exemption-uptake-rate                   ; percentage of exemption-eligible constrained residents who successfully accessed
+  eligible-done
+  eligible-accessed
+
+  access-scores
 ]
 
+breed [healthy-peoples healthy-people]
+breed [constrained-peoples constrained-people]
 
-breed [healthy-residents healthy-resident]
-breed [constrained-residents constrained-resident]
-
-
+;; turtle variables
 turtles-own
 [
   mobility-capacity
@@ -50,15 +47,11 @@ turtles-own
 
   accessed?
   unable-to-access?
+  recorded?
 
-  needs-vehicle?
   using-vehicle?
   eligible-exemption?
-
-  used-exemption?
-  detour-distance
 ]
-
 
 patches-own
 [
@@ -66,49 +59,38 @@ patches-own
   service?
   restricted?
   exemption?
+  road?
 ]
 
 
 ;;
-;; setup
+;; to setup
 ;;
 
 to setup
-
-  ca
-  no-display
-
-  set-default-values
+  clear-all
+  set-defaults
   setup-patches
-  setup-people
-  update-results
-
   reset-ticks
-  
-  display
-
 end
 
 
-;;
-;; set all default values
-;;
-to set-default-values
+to set-defaults
 
-  ;; vehicle need assumption
-  if vehicle-need-level = "low" [set vehicle-need-threshold 60]
-  if vehicle-need-level = "medium" [set vehicle-need-threshold 85]
-  if vehicle-need-level = "high" [set vehicle-need-threshold 110]
+  if vehicle-need-level = "low"    [ set vehicle-need-threshold 60 ]
+  if vehicle-need-level = "medium" [ set vehicle-need-threshold 85 ]
+  if vehicle-need-level = "high"   [ set vehicle-need-threshold 110 ]
 
-  ;; movement burden per patch-step
+  set healthy-capacity 200
+
   set healthy-move-cost 1
-  set constrained-walk-cost 3.5
+  set constrained-move-cost 3.5
   set vehicle-move-cost 0.5
 
-  ;; fixed model assumptions
-  set healthy-capacity 200
   set exemption-target-y 0
-  set max-ticks 150
+  set max-active-people 45
+
+  set access-scores []
 
 end
 
@@ -125,36 +107,71 @@ to setup-patches
     set service? false
     set restricted? false
     set exemption? false
-    set pcolor gray + 2
+    set road? false
+    set pcolor gray - 2
   ]
 
-  ;; home/ residential area on the left of the world as green
-  ask patches with [pxcor <= min-pxcor + 3]
+  let left-road-x -16
+  let center-road-x 0
+  let right-road-x 16
+
+  let top-road-y 12
+  let middle-road-y 0
+  let bottom-road-y -12
+
+  let road-half-width 1
+  let terminal-width 2
+
+  ask patches with
+  [
+    abs (pycor - top-road-y) <= road-half-width or
+    abs (pycor - middle-road-y) <= road-half-width or
+    abs (pycor - bottom-road-y) <= road-half-width or
+    abs (pxcor - left-road-x) <= road-half-width or
+    abs (pxcor - center-road-x) <= road-half-width or
+    abs (pxcor - right-road-x) <= road-half-width
+  ]
+  [
+    set road? true
+    set pcolor gray + 1
+  ]
+
+  ask patches with
+  [
+    road? and
+    pxcor >= min-pxcor and
+    pxcor <= min-pxcor + terminal-width
+  ]
   [
     set home? true
-    set pcolor green + 2
   ]
 
-  ;; essential service on the right of the world as blue
-  ask patches with [pxcor >= max-pxcor - 3]
+  ask patches with
+  [
+    road? and
+    pxcor <= max-pxcor and
+    pxcor >= max-pxcor - terminal-width
+  ]
   [
     set service? true
-    set pcolor blue + 2
   ]
 
-  ;; car restriction boundary as red
-  ask patches with [pxcor = 0]
+  ask patches with
+  [
+    pxcor = center-road-x and
+    pycor >= bottom-road-y and
+    pycor <= top-road-y
+  ]
   [
     set restricted? true
     set pcolor red
   ]
 
-  ;; exemption crossing only when selected in individual exemption scenario as orange 
   if scenario = "individual-exemption"
   [
     ask patches with
     [
-      pxcor = 0 and
+      pxcor = center-road-x and
       pycor >= exemption-target-y - 1 and
       pycor <= exemption-target-y + 1
     ]
@@ -168,85 +185,145 @@ end
 
 
 ;;
-;; setup the people agents
+;; to go 
 ;;
 
-to setup-people
+to go
 
-  ; healthy people setup
-  create-healthy-residents num-healthy
+  ask turtles with [unable-to-access? and recorded?]
   [
-    ; allow multiple people start from the same "home" patch
-    move-to one-of patches with [home?]
+    die
+  ]
 
-    set shape "person"
-    set color green
-    set size 1.5
-    set heading 90
+  create-access-flow
 
-    set mobility-capacity healthy-capacity
-    set travel-burden 0
-    set access-score 0
+  ask turtles with [not accessed? and not unable-to-access?]
+  [
+    move-one-step
+    check-access
+    check-failure
+  ]
 
-    set accessed? false
-    set unable-to-access? false
+  ask turtles with [accessed?]
+  [
+    leave-after-access
+  ]
 
-    set needs-vehicle? false
-    set using-vehicle? false
-    set eligible-exemption? false
-    set used-exemption? false
-    set detour-distance 0
+  ask turtles with [unable-to-access? and not recorded?]
+  [
+    set color red
+    record-result
+  ]
 
-    ; healthy people drive in baseline but forced to walk in restricted scenarios
-    if scenario = "baseline"
+  tick
+
+end
+
+
+;;
+;; create people
+;;
+
+to create-access-flow
+
+  if count turtles >= max-active-people
+  [
+    stop
+  ]
+
+  repeat people-from-flow healthy-access-flow
+  [
+    create-person "healthy"
+  ]
+
+  repeat people-from-flow constrained-access-flow
+  [
+    create-person "constrained"
+  ]
+
+end
+
+
+to-report people-from-flow [flow]
+
+  let n floor flow
+
+  if random-float 1 < flow - n
+  [
+    set n n + 1
+  ]
+
+  report n
+
+end
+
+
+to create-person [person-type]
+
+  let starts patches with [home? and road? and not any? turtles-here]
+
+  if not any? starts
+  [
+    stop
+  ]
+
+  if person-type = "healthy"
+  [
+    create-healthy-peoples 1
     [
-      ; 80% of healthy people choose to drive in the baseline, typical car dependency idea
-      if random 100 < 80 [ set using-vehicle? true ]
-    ]
-
-    if scenario = "people-friendly-streets" or scenario = "individual-exemption"
-    [
-      ; mode-shift to walking: restriction applies to all healthy residents
-      set using-vehicle? false
+      initialise-person one-of starts green healthy-capacity
     ]
   ]
 
-  ; constrianed people setup 
-  create-constrained-residents num-constrained
+  if person-type = "constrained"
   [
-    ; allow multiple people start from the same "home" patch
-    move-to one-of patches with [home?]
+    create-constrained-peoples 1
+    [
+      let cap constrained-min-capacity +
+        random-float (constrained-max-capacity - constrained-min-capacity)
 
-    set shape "person"
-    set color orange
-    set size 1.5
-    set heading 90
+      initialise-person one-of starts orange cap
+    ]
+  ]
 
-    ; random capacity for constrained people 
-    set mobility-capacity constrained-min-capacity +
-      random-float (constrained-max-capacity - constrained-min-capacity)
+end
 
-    set travel-burden 0
-    set access-score 0
 
-    set accessed? false
-    set unable-to-access? false
+to initialise-person [start-patch start-color capacity]
 
-    ; check if mobility capacity below a pre-defined score, the person will need vehicle assistance otherwise
-    set needs-vehicle? mobility-capacity < vehicle-need-threshold 
-    set eligible-exemption? false
-    set using-vehicle? false
-    set used-exemption? false
-    set detour-distance 0
+  move-to start-patch
+
+  set shape "person"
+  set size 1.2
+  set color start-color
+  set heading 90
+
+  set mobility-capacity capacity
+  set travel-burden 0
+  set access-score 0
+
+  set accessed? false
+  set unable-to-access? false
+  set recorded? false
+
+  set using-vehicle? false
+  set eligible-exemption? false
+
+  if breed = healthy-peoples
+  [
+    if scenario = "baseline" and random 100 < 80
+    [
+      set using-vehicle? true
+    ]
+  ]
+
+  if breed = constrained-peoples
+  [
+    let needs-vehicle? mobility-capacity < vehicle-need-threshold
 
     if scenario = "baseline"
     [
       set using-vehicle? needs-vehicle?
-    ]
-
-    if scenario = "people-friendly-streets"
-    [
-      set using-vehicle? false
     ]
 
     if scenario = "individual-exemption"
@@ -260,52 +337,11 @@ end
 
 
 ;;
-;; go 
-;;
-to go
-
-  ; stop when everyone has either accessed the service or failed
-  if all? turtles [accessed? or unable-to-access?]
-  [
-    update-results
-    stop
-  ]
-
-  ; stop when maximum ticks is reached
-  if ticks >= max-ticks
-  [
-    ask turtles with [not accessed? and not unable-to-access?]
-    [
-      set unable-to-access? true
-      set color red
-    ]
-
-    update-results
-    stop
-  ]
-
-  ; each active resident moves one patch per tick
-  ask turtles with [not accessed? and not unable-to-access?]
-  [
-    move-one-step
-    check-access
-    check-failure
-    update-appearance
-  ]
-
-  update-results
-  tick
-
-end
-
-
-;;
-;; people movement
+;; people movements
 ;;
 
 to move-one-step
 
-  ;; in Exemption scenario, people on vehicle need to move vertically up or down to reach the orange Exemption crossing
   if scenario = "individual-exemption"
   [
     if using-vehicle? and pxcor = -1 and pycor != exemption-target-y
@@ -315,107 +351,111 @@ to move-one-step
     ]
   ]
 
-  move-towards-service
+  move-east
 
 end
 
 
-to move-towards-service
+to move-east
 
-  let target-patch patch-at 1 0
+  let target patch-at 1 0
 
-  if target-patch = nobody
+  if target = nobody
   [
     set unable-to-access? true
     stop
   ]
 
-  if not can-enter? target-patch
+  if not can-enter? target
   [
     set unable-to-access? true
     stop
   ]
 
-  move-to target-patch
+  move-to target
   set heading 90
-  add-travel-burden
+  add-burden
 
 end
 
 
 to move-towards-exemption
 
+  let target nobody
+
   if pycor < exemption-target-y
   [
-    let target-patch patch-at 0 1
-
-    if target-patch != nobody
-    [
-      move-to target-patch
-      set heading 0
-      set detour-distance detour-distance + 1
-      add-travel-burden
-    ]
-
-    stop
+    set target patch-at 0 1
+    set heading 0
   ]
 
   if pycor > exemption-target-y
   [
-    let target-patch patch-at 0 -1
+    set target patch-at 0 -1
+    set heading 180
+  ]
 
-    if target-patch != nobody
-    [
-      move-to target-patch
-      set heading 180
-      set detour-distance detour-distance + 1
-      add-travel-burden
-    ]
-
+  if target = nobody or not can-enter? target
+  [
+    set unable-to-access? true
     stop
   ]
+
+  move-to target
+  add-burden
+
+end
+
+
+to leave-after-access
+
+  set color blue
+  set heading 90
+
+  let target patch-at 1 0
+
+  if target = nobody
+  [
+    die
+    stop
+  ]
+
+  move-to target
 
 end
 
 
 ;;
-;; rules for people to move
+;; ACCESS RULES
 ;;
-to-report can-enter? [target-patch]
-  ;; people walking can enter the restricted area cus restriction is for vehicles only
+
+to-report can-enter? [target]
+
+  if not [road?] of target
+  [
+    report false
+  ]
+
   if not using-vehicle?
   [
     report true
   ]
 
-  ;; Baseline scenario: vehicles can pass through anywhere
   if scenario = "baseline"
   [
     report true
   ]
 
-  ;; People-Friendly Streets scenario: vehicles cannot cross the restriction boundary
   if scenario = "people-friendly-streets"
   [
-    if [restricted?] of target-patch
-    [
-      report false
-    ]
-
-    report true
+    report not [restricted?] of target
   ]
 
-  ;; Individual Exemption: vehicles can cross only through orange exemption patches
   if scenario = "individual-exemption"
   [
-    if [restricted?] of target-patch and not [exemption?] of target-patch
+    if [restricted?] of target and not [exemption?] of target
     [
       report false
-    ]
-
-    if [exemption?] of target-patch
-    [
-      set used-exemption? true
     ]
 
     report true
@@ -427,71 +467,52 @@ end
 
 
 ;;
-;; rules for burden, sucessfully accessed, failure to reach services
+;; burden and accessed
 ;;
 
-;; burden
-to add-travel-burden
+to add-burden
 
   if using-vehicle?
   [
-    ; [FIX 2] count other vehicles sharing this patch to simulate traffic congestion
     let traffic count turtles-here with [using-vehicle?]
-    ; base vehicle cost plus an additional penalty per extra vehicle on the same patch
-    let congestion-penalty (traffic - 1) * 0.2
-
-    set travel-burden travel-burden + vehicle-move-cost + congestion-penalty
+    set travel-burden travel-burden + vehicle-move-cost + ((traffic - 1) * 0.2)
     stop
   ]
 
-  if breed = healthy-residents
+  if breed = healthy-peoples
   [
     set travel-burden travel-burden + healthy-move-cost
-    stop
   ]
 
-  if breed = constrained-residents
+  if breed = constrained-peoples
   [
-    set travel-burden travel-burden + constrained-walk-cost
-    stop
+    set travel-burden travel-burden + constrained-move-cost
   ]
 
 end
 
-;; sucessfully accessed
+
 to check-access
 
   if [service?] of patch-here
   [
     set accessed? true
-    set unable-to-access? false
-  ]
+    set color blue
 
-end
-
-;; failure to reach services
-to check-failure
-
-  if not accessed?
-  [
-    if travel-burden > mobility-capacity
+    if not recorded?
     [
-      set unable-to-access? true
+      record-result
     ]
   ]
 
 end
 
-;; set outlooks appearance colour of their ending
-to update-appearance
 
-  if accessed?
-  [
-    set color blue
-  ]
+to check-failure
 
-  if unable-to-access?
+  if not accessed? and travel-burden > mobility-capacity
   [
+    set unable-to-access? true
     set color red
   ]
 
@@ -499,115 +520,141 @@ end
 
 
 ;;
-;; results - set calculations 
+;; results
 ;;
 
-to update-results
+to record-result
 
-  ask turtles
-  [
-    calculate-access-score
-  ]
-
-  ifelse count healthy-residents > 0
-  [
-    set healthy-access-rate
-      100 * count healthy-residents with [accessed?] / count healthy-residents
-
-    set mean-burden-healthy
-      mean [travel-burden] of healthy-residents
-
-    set mean-accessibility-healthy
-      mean [access-score] of healthy-residents
-  ]
-  [
-    set healthy-access-rate 0
-    set mean-burden-healthy 0
-    set mean-accessibility-healthy 0
-  ]
-
-  ifelse count constrained-residents > 0
-  [
-    set constrained-access-rate
-      100 * count constrained-residents with [accessed?] / count constrained-residents
-
-    set mean-burden-constrained
-      mean [travel-burden] of constrained-residents
-
-    set mean-accessibility-constrained
-      mean [access-score] of constrained-residents
-
-    set mean-detour-constrained
-      mean [detour-distance] of constrained-residents
-  ]
-  [
-    set constrained-access-rate 0
-    set mean-burden-constrained 0
-    set mean-accessibility-constrained 0
-    set mean-detour-constrained 0
-  ]
-
-  set access-rate-gap healthy-access-rate - constrained-access-rate
-  set burden-gap mean-burden-constrained - mean-burden-healthy
-  set accessibility-inequality mean-accessibility-healthy - mean-accessibility-constrained
-
-  ; gini coefficient calculated across all residents to measure overall accessibility inequality
-  set accessibility-gini calculate-gini
-
-  ; exemption uptake rate only meaningful in individual-exemption scenario
-  ifelse count constrained-residents with [eligible-exemption?] > 0
-  [
-    set exemption-uptake-rate
-      100 * count constrained-residents with [eligible-exemption? and accessed?] /
-      count constrained-residents with [eligible-exemption?]
-  ]
-  [
-    set exemption-uptake-rate 0
-  ]
-
-end
-
-
-to calculate-access-score
-
-  if unable-to-access?
-  [
-    set access-score 0
-    stop
-  ]
+  set access-score 0
 
   if accessed?
   [
-    set access-score 100 * (1 - (travel-burden / mobility-capacity))
+    set access-score 100 * (1 - travel-burden / mobility-capacity)
 
     if access-score < 0
     [
       set access-score 0
     ]
-
-    stop
   ]
 
-  set access-score 0
+  if breed = healthy-peoples
+  [
+    set healthy-done healthy-done + 1
+
+    if accessed?
+    [
+      set healthy-accessed healthy-accessed + 1
+    ]
+
+    set healthy-burden-sum healthy-burden-sum + travel-burden
+    set healthy-score-sum healthy-score-sum + access-score
+  ]
+
+  if breed = constrained-peoples
+  [
+    set constrained-done constrained-done + 1
+
+    if accessed?
+    [
+      set constrained-accessed constrained-accessed + 1
+    ]
+
+    if eligible-exemption?
+    [
+      set eligible-done eligible-done + 1
+
+      if accessed?
+      [
+        set eligible-accessed eligible-accessed + 1
+      ]
+    ]
+
+    set constrained-burden-sum constrained-burden-sum + travel-burden
+    set constrained-score-sum constrained-score-sum + access-score
+  ]
+
+  set access-scores lput access-score access-scores
+  set recorded? true
 
 end
 
 
 ;;
-;; gini coefficient across all residents access scores
-;; 0 = perfect equality, 1 = maximum inequality
+;; reporters
 ;;
-to-report calculate-gini
 
-  let scores sort [access-score] of turtles
+to-report healthy-access-rate
+  if healthy-done = 0 [ report 0 ]
+  report 100 * healthy-accessed / healthy-done
+end
+
+
+to-report constrained-access-rate
+  if constrained-done = 0 [ report 0 ]
+  report 100 * constrained-accessed / constrained-done
+end
+
+
+to-report access-rate-gap
+  report healthy-access-rate - constrained-access-rate
+end
+
+
+to-report mean-burden-healthy
+  if healthy-done = 0 [ report 0 ]
+  report healthy-burden-sum / healthy-done
+end
+
+
+to-report mean-burden-constrained
+  if constrained-done = 0 [ report 0 ]
+  report constrained-burden-sum / constrained-done
+end
+
+
+to-report burden-gap
+  report mean-burden-constrained - mean-burden-healthy
+end
+
+
+to-report mean-accessibility-healthy
+  if healthy-done = 0 [ report 0 ]
+  report healthy-score-sum / healthy-done
+end
+
+
+to-report mean-accessibility-constrained
+  if constrained-done = 0 [ report 0 ]
+  report constrained-score-sum / constrained-done
+end
+
+
+to-report accessibility-inequality
+  report mean-accessibility-healthy - mean-accessibility-constrained
+end
+
+
+to-report exemption-uptake-rate
+  if eligible-done = 0 [ report 0 ]
+  report 100 * eligible-accessed / eligible-done
+end
+
+
+to-report accessibility-gini
+
+  let scores sort access-scores
   let n length scores
   let total sum scores
 
+  if n = 0 [ report 0 ]
   if total = 0 [ report 0 ]
 
   let weighted-sum 0
   let i 1
-  foreach scores [ s ->
+
+  foreach scores
+  [
+    s ->
     set weighted-sum weighted-sum + i * s
     set i i + 1
   ]
@@ -616,18 +663,16 @@ to-report calculate-gini
 
 end]]></code>
   <widgets>
-    <view x="368" wrappingAllowedX="false" y="10" frameRate="30.0" minPycor="-16" height="435" showTickCounter="true" patchSize="13.0" fontSize="10" wrappingAllowedY="false" width="435" tickCounterLabel="ticks" maxPycor="16" updateMode="0" maxPxcor="16" minPxcor="-16"></view>
+    <view x="368" wrappingAllowedX="false" y="10" frameRate="30.0" minPycor="-15" height="469" showTickCounter="true" patchSize="15.0" fontSize="10" wrappingAllowedY="false" width="469" tickCounterLabel="ticks" maxPycor="15" updateMode="0" maxPxcor="15" minPxcor="-15"></view>
     <button x="25" y="10" height="40" disableUntilTicks="false" forever="false" kind="Observer" width="55">setup</button>
     <button x="85" y="10" height="40" disableUntilTicks="false" forever="true" kind="Observer" width="55">go</button>
-    <chooser x="150" y="10" height="60" variable="scenario" current="2" width="210" display="scenario">
+    <chooser x="150" y="10" height="60" variable="scenario" current="0" width="210" display="scenario">
       <choice type="string" value="baseline"></choice>
       <choice type="string" value="people-friendly-streets"></choice>
       <choice type="string" value="individual-exemption"></choice>
     </chooser>
     <monitor x="25" precision="17" y="75" height="60" fontSize="11" width="100" display="healthy-access-rate">healthy-access-rate</monitor>
     <monitor x="135" precision="17" y="75" height="60" fontSize="11" width="100" display="constrained-access-rate">constrained-access-rate</monitor>
-    <slider x="25" step="1" y="270" max="100" width="250" display="num-healthy" height="50" min="0" direction="Horizontal" default="50.0" variable="num-healthy"></slider>
-    <slider x="25" step="1" y="325" max="100" width="250" display="num-constrained" height="50" min="0" direction="Horizontal" default="20.0" variable="num-constrained"></slider>
     <slider x="25" step="1" y="380" max="200" width="250" display="constrained-min-capacity" height="50" min="0" direction="Horizontal" default="20.0" variable="constrained-min-capacity"></slider>
     <slider x="25" step="1" y="435" max="200" width="250" display="constrained-max-capacity" height="50" min="0" direction="Horizontal" default="100.0" variable="constrained-max-capacity"></slider>
     <chooser x="25" y="490" height="60" variable="vehicle-need-level" current="0" width="250" display="vehicle-need-level">
@@ -642,7 +687,7 @@ end]]></code>
     <monitor x="240" precision="17" y="205" height="60" fontSize="11" width="100">burden-gap</monitor>
     <monitor x="240" precision="17" y="140" height="60" fontSize="11" width="100" display="access-rate-gap">access-rate-gap</monitor>
     <monitor x="240" precision="17" y="75" height="60" fontSize="11" width="100">exemption-uptake-rate</monitor>
-    <plot x="825" autoPlotX="true" yMax="1.0" autoPlotY="true" y="10" xMin="0.0" height="175" legend="false" xMax="150.0" yMin="0.0" width="230" display="gini over time">
+    <plot x="1130" autoPlotX="true" yMax="1.0" autoPlotY="true" y="10" xMin="0.0" height="175" legend="false" xMax="150.0" yMin="0.0" width="230" display="gini over time">
       <setup></setup>
       <update></update>
       <pen interval="1.0" mode="0" display="pen-1" color="-7500403" legend="true">
@@ -650,6 +695,9 @@ end]]></code>
         <update>plot accessibility-gini</update>
       </pen>
     </plot>
+    <monitor x="1010" precision="17" y="15" height="60" fontSize="11" width="100">accessibility-gini</monitor>
+    <slider x="25" step="0.1" y="270" max="1" width="250" display="healthy-access-flow" height="50" min="0" direction="Horizontal" default="1.0" variable="healthy-access-flow"></slider>
+    <slider x="25" step="0.1" y="325" max="1" width="250" display="constrained-access-flow" height="50" min="0" direction="Horizontal" default="0.4" variable="constrained-access-flow"></slider>
   </widgets>
   <info>## WHAT IS IT?
 
