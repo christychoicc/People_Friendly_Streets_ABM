@@ -65,9 +65,9 @@ end
 ;; set default values
 ;;
 to set-defaults
-  set healthy-capacity 200
+  set healthy-capacity 200             ;; assumption for healthy people
 
-  set healthy-move-cost 1
+  set healthy-move-cost 1              ;; assumption for healthy people
   set constrained-move-cost 3.5
   set vehicle-move-cost 0.5
 
@@ -264,7 +264,9 @@ to initialise-person [start-patch start-color capacity]
   ;; Healthy people may use vehicles only in the baseline.
   if breed = healthy-peoples
   [
-    if scenario = "baseline" and random 100 < 80
+    ;; 60 was chosen as "Both disabled and non-disabled adults made over 60% of all trips by car in 2023
+    ;; Source: https://www.gov.uk/government/statistics/disability-accessibility-and-blue-badge-scheme-statistics-2023-to-2024/disability-accessibility-and-blue-badge-statistics-england-2023-to-2024 
+    if scenario = "baseline" and random 100 < 60 
     [
       set using-vehicle? true
     ]
@@ -273,12 +275,19 @@ to initialise-person [start-patch start-color capacity]
   ;; Constrained people need vehicle access in baseline and in exemption policy.
   if breed = constrained-peoples
   [
-    set using-vehicle? true
-    if scenario = "individual-exemption"
+    ;; choose around 70% as 29% of disabled adults lived in households without access to a car, compared with 16% of non-disabled adults
+    ;; Source: https://www.gov.uk/government/statistics/disability-accessibility-and-blue-badge-scheme-statistics-2023-to-2024/disability-accessibility-and-blue-badge-statistics-england-2023-to-2024 
+    if random 100 < 70
+    [
+      set using-vehicle? true
+    ]
+    
+    if scenario = "individual-exemption" and using-vehicle?
     [
       set eligible-exemption? true
     ]
   ]
+  
 end
 
 to move-one-step
@@ -598,7 +607,7 @@ to-report accessibility-gini
   report (2 * weighted-sum) / (n * total) - (n + 1) / n
 end]]></code>
   <widgets>
-    <view x="410" wrappingAllowedX="false" y="20" frameRate="30.0" minPycor="-15" height="469" showTickCounter="true" patchSize="15.0" fontSize="10" wrappingAllowedY="false" width="469" tickCounterLabel="ticks" maxPycor="15" updateMode="0" maxPxcor="15" minPxcor="-15"></view>
+    <view x="350" wrappingAllowedX="false" y="20" frameRate="30.0" minPycor="-15" height="469" showTickCounter="true" patchSize="15.0" fontSize="10" wrappingAllowedY="false" width="469" tickCounterLabel="ticks" maxPycor="15" updateMode="0" maxPxcor="15" minPxcor="-15"></view>
     <button x="25" y="20" height="40" disableUntilTicks="false" forever="false" kind="Observer" width="55">setup</button>
     <button x="85" y="20" height="40" disableUntilTicks="false" forever="true" kind="Observer" width="55">go</button>
     <chooser x="25" y="70" height="60" variable="scenario" current="2" width="210" display="scenario">
@@ -616,7 +625,7 @@ end]]></code>
     <monitor x="25" precision="17" y="485" height="60" fontSize="11" width="100" display="access-rate-gap">access-rate-gap</monitor>
     <monitor x="130" precision="17" y="485" height="60" fontSize="11" width="100">burden-gap</monitor>
     <slider x="25" step="1" y="355" max="500" width="250" display="max-active-people" height="50" min="0" direction="Horizontal" default="368.0" variable="max-active-people"></slider>
-    <plot x="930" autoPlotX="true" yMax="1.0" autoPlotY="true" y="20" xMin="0.0" height="175" legend="false" xMax="150.0" yMin="0.0" width="230" display="gini over time">
+    <plot x="835" autoPlotX="true" yMax="1.0" autoPlotY="true" y="20" xMin="0.0" height="175" legend="false" xMax="150.0" yMin="0.0" width="230" display="accessibility gini over time">
       <setup></setup>
       <update></update>
       <pen interval="1.0" mode="0" display="pen-1" color="-7500403" legend="true">
@@ -624,9 +633,8 @@ end]]></code>
         <update>plot accessibility-gini</update>
       </pen>
     </plot>
-    <note x="280" y="355" backgroundDark="0" fontSize="12" width="130" markdown="false" height="50" textColorDark="-1" textColorLight="-16777216" backgroundLight="0">Adjust the slider for testing demand/ overcrowding levels </note>
-    <slider x="930" step="1" y="210" max="200" width="250" display="vehicle-need-threshold" height="50" min="0" direction="Horizontal" default="80.0" variable="vehicle-need-threshold"></slider>
-    <slider x="930" step="0.05" y="265" max="1" width="250" display="healthy-vehicle-probability" height="50" min="0" direction="Horizontal" default="0.6" variable="healthy-vehicle-probability"></slider>
+    <slider x="355" step="1" y="500" max="200" width="230" display="vehicle-need-threshold" height="50" min="0" direction="Horizontal" default="80.0" variable="vehicle-need-threshold"></slider>
+    <slider x="595" step="0.05" y="500" max="1" width="225" display="healthy-vehicle-probability" height="50" min="0" direction="Horizontal" default="0.6" variable="healthy-vehicle-probability"></slider>
   </widgets>
   <info>## WHAT IS IT?
 
