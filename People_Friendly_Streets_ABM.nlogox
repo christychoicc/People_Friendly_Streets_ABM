@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <model version="NetLogo 7.0.3" snapToGrid="true">
-  <code><![CDATA[;;  
+  <code><![CDATA[;; 
 ;; Inclusive Access in People-Friendly Streets
 ;;
 
@@ -77,7 +77,7 @@ end
 to set-defaults
   set healthy-capacity 200             ;; assumption for healthy people
   set healthy-move-cost 1              ;; assumption for healthy people
-  set constrained-move-cost 3.5        ;; assumption to represent higher mobility cost for people with mobility limitations (Wert et al., 2013)
+  set constrained-move-cost 3.5        ;; assumption to represent higher mobility cost (Wert et al., 2013)
   set vehicle-move-cost 0.5
   set exemption-target-y 0
   set left-road-x -16
@@ -315,8 +315,10 @@ to initialise-person [start-patch start-color capacity]
     [
       set using-vehicle? true
     ]
-
-    if scenario = "individual-exemption" and using-vehicle?
+    ;; using Islington example where their trail of adapting this individual exemption has 79 permits given out
+    ;; 8837 Blue Badge holders Feb 2025 (Source: https://democracy.islington.gov.uk/documents/s43089/Blue%20Badge%20Traffic%20Filter%20Exemption%20Trial%20Exec%20Paper%20v5.pdf)
+    ;; 5 is considered to be used for a continuous growing uptake and represent current low uptake rates
+    if scenario = "individual-exemption" and using-vehicle? and random 100 < 5
     [
       set eligible-exemption? true
     ]
@@ -393,7 +395,7 @@ to move-to-target [target new-heading]
   ]
   move-to target
   set heading new-heading
-  set travel-burden travel-burden + cost
+  add-burden
 end
 
 
@@ -428,11 +430,6 @@ end
 ;; check whether a target patch can be entered
 ;;
 to-report can-enter? [target]
-  if target = nobody
-  [
-    report false
-  ]
-
   if not [road?] of target
   [
     report false
@@ -453,16 +450,32 @@ to-report can-enter? [target]
   ;; vehicles cannot enter restricted roads in the people-friendly-streets scenario
   if scenario = "people-friendly-streets"
   [
-    report not [restricted?] of target
+    if [restricted?] of target
+    [
+      report false
+    ]
+    report true
   ]
 
   ;; vehicles can enter the restricted street only at the exemption crossing
   ;; in the individual exemption scenario
   if scenario = "individual-exemption"
   [
-    report (not [restricted?] of target) or [exemption?] of target
-  ]
+    if [restricted?] of target
+    [
+      if not eligible-exemption?
+      [
+        report false
+      ]
 
+      if not [exemption?] of target
+      [
+        report false
+      ]
+    ]
+
+    report true
+  ]
   report true
 end
 
@@ -475,11 +488,35 @@ to-report movement-cost
   [
     report vehicle-move-cost
   ]
+  if breed = healthy-peoples
+  [
+    report healthy-move-cost
+  ]
   if breed = constrained-peoples
   [
     report constrained-move-cost
   ]
   report healthy-move-cost
+end
+
+
+;;
+;; add movement burden
+;;
+to add-burden
+  if using-vehicle?
+  [
+    set travel-burden travel-burden + vehicle-move-cost
+    stop
+  ]
+  if breed = healthy-peoples
+  [
+    set travel-burden travel-burden + healthy-move-cost
+  ]
+  if breed = constrained-peoples
+  [
+    set travel-burden travel-burden + constrained-move-cost
+  ]
 end
 
 
@@ -578,29 +615,15 @@ to-report people-from-flow [flow]
 end
 
 
-to-report percent [part whole]
-  if whole = 0
-  [
-    report 0
-  ]
-  report 100 * part / whole
-end
-
-
-to-report average-or-zero [total n]
-  if n = 0
-  [
-    report 0
-  ]
-  report total / n
-end
-
-
 ;;
 ;; access rate for healthy people
 ;;
 to-report healthy-access-rate
-  report percent healthy-accessed healthy-done
+  if healthy-done = 0
+  [
+    report 0
+  ]
+  report 100 * healthy-accessed / healthy-done
 end
 
 
@@ -608,7 +631,11 @@ end
 ;; access rate for mobility-constrained people
 ;;
 to-report constrained-access-rate
-  report percent constrained-accessed constrained-done
+  if constrained-done = 0
+  [
+    report 0
+  ]
+  report 100 * constrained-accessed / constrained-done
 end
 
 
@@ -624,8 +651,17 @@ end
 ;; average travel burden gap between constrained and healthy people
 ;;
 to-report burden-gap
-  report (average-or-zero constrained-burden-total constrained-done) -
-         (average-or-zero healthy-burden-total healthy-done)
+  let healthy-burden 0
+  let constrained-burden 0
+  if healthy-done > 0
+  [
+    set healthy-burden healthy-burden-total / healthy-done
+  ]
+  if constrained-done > 0
+  [
+    set constrained-burden constrained-burden-total / constrained-done
+  ]
+  report constrained-burden - healthy-burden
 end
 
 
@@ -633,7 +669,11 @@ end
 ;; average burden-adjusted accessibility score for healthy people
 ;;
 to-report healthy-accessibility-score
-  report average-or-zero healthy-score-sum healthy-done
+  if healthy-done = 0
+  [
+    report 0
+  ]
+  report healthy-score-sum / healthy-done
 end
 
 
@@ -641,7 +681,11 @@ end
 ;; average burden-adjusted accessibility score for mobility-constrained people
 ;;
 to-report constrained-accessibility-score
-  report average-or-zero constrained-score-sum constrained-done
+  if constrained-done = 0
+  [
+    report 0
+  ]
+  report constrained-score-sum / constrained-done
 end
 
 
@@ -659,7 +703,11 @@ end
 ;; this is not the main result, but it can help describe the exemption scenario
 ;;
 to-report exemption-eligible-access-rate
-  report percent eligible-accessed eligible-done
+  if eligible-done = 0
+  [
+    report 0
+  ]
+  report 100 * eligible-accessed / eligible-done
 end
 
 
@@ -718,7 +766,7 @@ end]]></code>
     <monitor x="970" precision="17" y="90" height="60" fontSize="11" width="100">constrained-access-rate</monitor>
     <monitor x="860" precision="17" y="160" height="60" fontSize="11" width="100">count turtles</monitor>
     <monitor x="970" precision="17" y="160" height="60" fontSize="11" width="100">accessibility-inequality</monitor>
-    <plot x="860" autoPlotX="true" yMax="1.0" autoPlotY="true" y="230" xMin="0.0" height="175" legend="false" xMax="150.0" yMin="0.0" width="230" display="accessibility inequality">
+    <plot x="860" autoPlotX="true" yMax="100.0" autoPlotY="true" y="230" xMin="0.0" height="175" legend="false" xMax="100.0" yMin="0.0" width="230" display="accessibility inequality">
       <setup></setup>
       <update></update>
       <pen interval="1.0" mode="0" display="pen-1" color="-7500403" legend="true">
@@ -726,14 +774,14 @@ end]]></code>
         <update>plot accessibility-inequality</update>
       </pen>
     </plot>
-    <plot x="1100" autoPlotX="true" yMax="10.0" autoPlotY="true" y="230" xMin="0.0" height="175" legend="false" xMax="10.0" yMin="0.0" width="230" display="accessibility by group">
+    <plot x="1100" autoPlotX="true" yMax="100.0" autoPlotY="true" y="230" xMin="0.0" height="175" legend="true" xMax="100.0" yMin="0.0" width="230" display="accessibility by group">
       <setup></setup>
       <update></update>
-      <pen interval="1.0" mode="0" display="default" color="-16777216" legend="true">
+      <pen interval="1.0" mode="0" display="healthy" color="-14439633" legend="true">
         <setup></setup>
         <update>plot healthy-accessibility-score</update>
       </pen>
-      <pen interval="1.0" mode="0" display="pen-1" color="-7500403" legend="true">
+      <pen interval="1.0" mode="0" display="constrained" color="-3844592" legend="true">
         <setup></setup>
         <update>plot constrained-accessibility-score</update>
       </pen>
@@ -741,6 +789,14 @@ end]]></code>
     <slider x="25" step="1" y="360" max="500" width="250" display="max-active-people" height="50" min="0" direction="Horizontal" default="500.0" variable="max-active-people"></slider>
     <slider x="25" step="1" y="420" max="200" width="250" display="vehicle-need-threshold" height="50" min="0" direction="Horizontal" default="80.0" variable="vehicle-need-threshold"></slider>
     <slider x="25" step="0.05" y="480" max="1" width="250" display="healthy-vehicle-probability" height="50" min="0" direction="Horizontal" default="0.6" variable="healthy-vehicle-probability"></slider>
+    <plot x="1100" autoPlotX="true" yMax="1.0" autoPlotY="true" y="45" xMin="0.0" height="175" legend="false" xMax="1.0" yMin="0.0" width="230" display="accessibility gini">
+      <setup></setup>
+      <update></update>
+      <pen interval="1.0" mode="0" display="default" color="-16777216" legend="true">
+        <setup></setup>
+        <update>plot accessibility-gini</update>
+      </pen>
+    </plot>
   </widgets>
   <info>## WHAT IS IT?
 
