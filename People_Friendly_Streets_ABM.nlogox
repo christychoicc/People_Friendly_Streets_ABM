@@ -18,11 +18,11 @@ globals
   top-road-y                        ;; y-coord of the top horizontal road
   middle-road-y                     ;; y-coord of the middle horizontal road
   bottom-road-y                     ;; y-coord of the bottom horizontal road
-  road-width                   ;; half width of each road corridor
+  road-width                        ;; half width of each road corridor
   zone-width                        ;; width of home/service edge zones
 
-  healthy-done                      ;; number of completed journey (success/ failed) to services by healthy people
-  constrained-done                  ;; number of completed journey (success/ failed) to services by constrained people
+  healthy-complete                      ;; number of completed journey (success/ failed) to services by healthy people
+  constrained-complete                  ;; number of completed journey (success/ failed) to services by constrained people
   healthy-accessed                  ;; number of sucessfully accessed services by healthy people
   constrained-accessed              ;; number of sucessfully accessed services by constrained people
   healthy-burden-total              ;; total travel burden for healthy people
@@ -47,6 +47,7 @@ turtles-own
   recorded?                         ;; boolean - whether results have been recorded
   using-vehicle?                    ;; boolean - whether the people were travelled with vehicle
   eligible-exemption?               ;; boolean - whether the people were eligible for exemption
+  switched-to-walking?              ;; boolean - whether the people switched from vehicle use to walking
 ]
 
 patches-own
@@ -296,6 +297,7 @@ to initialise-person [start-patch start-color capacity]
   set recorded? false
   set using-vehicle? false
   set eligible-exemption? false
+  set switched-to-walking? false
   ;; healthy people can only use vehicles in baseline
   if breed = healthy-peoples
   [
@@ -315,10 +317,8 @@ to initialise-person [start-patch start-color capacity]
     [
       set using-vehicle? true
     ]
-    ;; using Islington example where their trail of adapting this individual exemption has 79 permits given out
-    ;; 8837 Blue Badge holders Feb 2025 (Source: https://democracy.islington.gov.uk/documents/s43089/Blue%20Badge%20Traffic%20Filter%20Exemption%20Trial%20Exec%20Paper%20v5.pdf)
-    ;; 5 is considered to be used for a continuous growing uptake and represent current low uptake rates
-    if scenario = "individual-exemption" and using-vehicle? and random 100 < 5
+    ;; to be chosen on slider
+    if scenario = "individual-exemption" and using-vehicle? and random 100 < exemption-uptake-rate
     [
       set eligible-exemption? true
     ]
@@ -379,23 +379,98 @@ to move-to-target [target new-heading]
   if target = nobody
   [
     set unable-to-access? true
+    set color red
     stop
   ]
+
+  ;; if a vehicle user reaches a restricted street that they cannot enter by vehicle,
+  ;; they switch to walking and then try to continue as a pedestrian
+  if not can-enter? target
+  [
+    if can-switch-to-walking? target
+    [
+      switch-to-walking
+    ]
+  ]
+
   if not can-enter? target
   [
     set unable-to-access? true
+    set color red
     stop
   ]
+
   let cost movement-cost
   ;; if the person cannot afford the next movement, they fail before moving
   if travel-burden + cost > mobility-capacity
   [
     set unable-to-access? true
+    set color red
     stop
   ]
   move-to target
   set heading new-heading
   add-burden
+end
+
+
+;;;
+;; check whether a vehicle user can switch to walking at a restricted street
+;;
+to-report can-switch-to-walking? [target]
+  if not using-vehicle?
+  [
+    report false
+  ]
+
+  if target = nobody
+  [
+    report false
+  ]
+
+  if not [road?] of target
+  [
+    report false
+  ]
+
+  if not [restricted?] of target
+  [
+    report false
+  ]
+
+  if scenario = "baseline"
+  [
+    report false
+  ]
+
+  ;; in the individual exemption scenario, eligible vehicle users should not switch to walking
+  ;; they should remain in the vehicle and use the exemption crossing
+  if scenario = "individual-exemption" and eligible-exemption?
+  [
+    report false
+  ]
+
+  report true
+end
+
+
+;;
+;; switch from vehicle use to walking
+;;
+to switch-to-walking
+  set using-vehicle? false
+  set switched-to-walking? true
+
+  ;; keep the person colour by group after switching mode
+  if breed = healthy-peoples
+  [
+    set color green
+  ]
+
+  if breed = constrained-peoples
+  [
+    set color orange
+  ]
 end
 
 
@@ -570,7 +645,7 @@ to record-result
   ]
   if breed = healthy-peoples
   [
-    set healthy-done healthy-done + 1
+    set healthy-complete healthy-complete + 1
     if accessed?
     [
       set healthy-accessed healthy-accessed + 1
@@ -580,7 +655,7 @@ to record-result
   ]
   if breed = constrained-peoples
   [
-    set constrained-done constrained-done + 1
+    set constrained-complete constrained-complete + 1
     if accessed?
     [
       set constrained-accessed constrained-accessed + 1
@@ -619,11 +694,11 @@ end
 ;; access rate for healthy people
 ;;
 to-report healthy-access-rate
-  if healthy-done = 0
+  if healthy-complete = 0
   [
     report 0
   ]
-  report 100 * healthy-accessed / healthy-done
+  report 100 * healthy-accessed / healthy-complete
 end
 
 
@@ -631,11 +706,11 @@ end
 ;; access rate for mobility-constrained people
 ;;
 to-report constrained-access-rate
-  if constrained-done = 0
+  if constrained-complete = 0
   [
     report 0
   ]
-  report 100 * constrained-accessed / constrained-done
+  report 100 * constrained-accessed / constrained-complete
 end
 
 
@@ -653,13 +728,13 @@ end
 to-report burden-gap
   let healthy-burden 0
   let constrained-burden 0
-  if healthy-done > 0
+  if healthy-complete > 0
   [
-    set healthy-burden healthy-burden-total / healthy-done
+    set healthy-burden healthy-burden-total / healthy-complete
   ]
-  if constrained-done > 0
+  if constrained-complete > 0
   [
-    set constrained-burden constrained-burden-total / constrained-done
+    set constrained-burden constrained-burden-total / constrained-complete
   ]
   report constrained-burden - healthy-burden
 end
@@ -669,11 +744,11 @@ end
 ;; average burden-adjusted accessibility score for healthy people
 ;;
 to-report healthy-accessibility-score
-  if healthy-done = 0
+  if healthy-complete = 0
   [
     report 0
   ]
-  report healthy-score-sum / healthy-done
+  report healthy-score-sum / healthy-complete
 end
 
 
@@ -681,11 +756,11 @@ end
 ;; average burden-adjusted accessibility score for mobility-constrained people
 ;;
 to-report constrained-accessibility-score
-  if constrained-done = 0
+  if constrained-complete = 0
   [
     report 0
   ]
-  report constrained-score-sum / constrained-done
+  report constrained-score-sum / constrained-complete
 end
 
 
@@ -709,16 +784,6 @@ to-report exemption-eligible-access-rate
   ]
   report 100 * eligible-accessed / eligible-done
 end
-
-
-;;
-;; access rate among exemption-eligible people
-;; this is not the main result, but it can help describe the exemption scenario
-;;
-to-report exemption-uptake-rate
-  report exemption-eligible-access-rate
-end
-
 
 ;;
 ;; accessibility gini
@@ -751,21 +816,18 @@ end]]></code>
     <view x="315" wrappingAllowedX="false" y="20" frameRate="30.0" minPycor="-16" height="499" showTickCounter="true" patchSize="15.0" fontSize="10" wrappingAllowedY="false" width="499" tickCounterLabel="ticks" maxPycor="16" updateMode="0" maxPxcor="16" minPxcor="-16"></view>
     <button x="25" y="20" height="40" disableUntilTicks="false" forever="false" kind="Observer" width="55">setup</button>
     <button x="85" y="20" height="40" disableUntilTicks="false" forever="true" kind="Observer" width="55">go</button>
-    <chooser x="25" y="70" height="60" variable="scenario" current="2" width="210" display="scenario">
+    <chooser x="25" y="70" height="60" variable="scenario" current="0" width="210" display="scenario">
       <choice type="string" value="baseline"></choice>
       <choice type="string" value="people-friendly-streets"></choice>
       <choice type="string" value="individual-exemption"></choice>
     </chooser>
-    <slider x="25" step="0.1" y="135" max="5" width="250" display="healthy-access-flow" height="50" min="0" direction="Horizontal" default="3.0" variable="healthy-access-flow"></slider>
-    <slider x="25" step="0.1" y="190" max="5" width="250" display="constrained-access-flow" height="50" min="0" direction="Horizontal" default="1.0" variable="constrained-access-flow"></slider>
+    <slider x="25" step="0.1" y="135" max="5" width="250" display="healthy-access-flow" height="50" min="0" direction="Horizontal" default="5.0" variable="healthy-access-flow"></slider>
+    <slider x="25" step="0.1" y="190" max="5" width="250" display="constrained-access-flow" height="50" min="0" direction="Horizontal" default="2.0" variable="constrained-access-flow"></slider>
     <slider x="25" step="1" y="245" max="200" width="250" display="constrained-min-capacity" height="50" min="0" direction="Horizontal" default="80.0" variable="constrained-min-capacity"></slider>
     <slider x="25" step="1" y="300" max="200" width="250" display="constrained-max-capacity" height="50" min="0" direction="Horizontal" default="180.0" variable="constrained-max-capacity"></slider>
     <monitor x="860" precision="17" y="20" height="60" fontSize="11" width="100">accessibility-inequality</monitor>
-    <monitor x="970" precision="17" y="20" height="60" fontSize="11" width="100">accessibility-gini</monitor>
     <monitor x="860" precision="17" y="90" height="60" fontSize="11" width="100">healthy-access-rate</monitor>
-    <monitor x="970" precision="17" y="90" height="60" fontSize="11" width="100">constrained-access-rate</monitor>
     <monitor x="860" precision="17" y="160" height="60" fontSize="11" width="100">count turtles</monitor>
-    <monitor x="970" precision="17" y="160" height="60" fontSize="11" width="100">accessibility-inequality</monitor>
     <plot x="860" autoPlotX="true" yMax="100.0" autoPlotY="true" y="230" xMin="0.0" height="175" legend="false" xMax="100.0" yMin="0.0" width="230" display="accessibility inequality">
       <setup></setup>
       <update></update>
@@ -786,10 +848,9 @@ end]]></code>
         <update>plot constrained-accessibility-score</update>
       </pen>
     </plot>
-    <slider x="25" step="1" y="360" max="500" width="250" display="max-active-people" height="50" min="0" direction="Horizontal" default="500.0" variable="max-active-people"></slider>
-    <slider x="25" step="1" y="420" max="200" width="250" display="vehicle-need-threshold" height="50" min="0" direction="Horizontal" default="80.0" variable="vehicle-need-threshold"></slider>
-    <slider x="25" step="0.05" y="480" max="1" width="250" display="healthy-vehicle-probability" height="50" min="0" direction="Horizontal" default="0.6" variable="healthy-vehicle-probability"></slider>
-    <plot x="1100" autoPlotX="true" yMax="1.0" autoPlotY="true" y="45" xMin="0.0" height="175" legend="false" xMax="1.0" yMin="0.0" width="230" display="accessibility gini">
+    <slider x="25" step="5" y="355" max="100" width="250" display="exemption-uptake-rate" height="50" min="5" direction="Horizontal" default="65.0" variable="exemption-uptake-rate"></slider>
+    <slider x="25" step="1" y="410" max="500" width="250" display="max-active-people" height="50" min="0" direction="Horizontal" default="500.0" variable="max-active-people"></slider>
+    <plot x="1100" autoPlotX="true" yMax="1.0" autoPlotY="true" y="30" xMin="0.0" height="175" legend="false" xMax="1.0" yMin="0.0" width="230" display="accessibility gini">
       <setup></setup>
       <update></update>
       <pen interval="1.0" mode="0" display="default" color="-16777216" legend="true">
@@ -797,6 +858,9 @@ end]]></code>
         <update>plot accessibility-gini</update>
       </pen>
     </plot>
+    <monitor x="980" precision="17" y="20" height="60" fontSize="11" width="100">accessibility-gini</monitor>
+    <monitor x="980" precision="17" y="90" height="60" fontSize="11" width="100">constrained-access-rate</monitor>
+    <monitor x="980" precision="17" y="160" height="60" fontSize="11" width="100">accessibility-inequality</monitor>
   </widgets>
   <info>## WHAT IS IT?
 
