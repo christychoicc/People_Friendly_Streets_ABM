@@ -2,6 +2,15 @@
 <model version="NetLogo 7.0.3" snapToGrid="true">
   <code><![CDATA[;; 
 ;; Inclusive Access in People-Friendly Streets
+;; 
+;; Agents:
+;; healthy-people: 
+;; constrained-people: mobility constrained people representing  
+;;
+;; Scenarios:
+;; baseline: baseline scenario without any policy implementation
+;; people-friendly-streets: policy of People-Friendly Streets
+;; individual-exemption: individual exemption under People-Friendly Streets
 ;;
 
 globals
@@ -10,19 +19,19 @@ globals
   healthy-move-cost                 ;; movement cost per step for healthy people
   constrained-move-cost             ;; movement cost per step for constrained people
   vehicle-move-cost                 ;; movement cost per step for travelling with vehicle
-  exemption-target-y                ;; y-coord of the orange exemption patch
   
+  exemption-target-y                ;; y-coord of the orange exemption patch
   left-road-x                       ;; x-coord of the left vertical road
-  center-road-x                     ;; x-coord of the restricted centre road
+  center-road-x                     ;; x-coord of the centre of restricted road
   right-road-x                      ;; x-coord of the right vertical road
   top-road-y                        ;; y-coord of the top horizontal road
   middle-road-y                     ;; y-coord of the middle horizontal road
   bottom-road-y                     ;; y-coord of the bottom horizontal road
-  road-width                        ;; half width of each road corridor
-  zone-width                        ;; width of home/service edge zones
+  road-width                        ;; set width of each road corridor
+  zone-width                        ;; width of home and service zones
 
-  healthy-complete                      ;; number of completed journey (success/ failed) to services by healthy people
-  constrained-complete                  ;; number of completed journey (success/ failed) to services by constrained people
+  healthy-complete                  ;; number of completed journey (success/ failed) to services by healthy people
+  constrained-complete              ;; number of completed journey (success/ failed) to services by constrained people
   healthy-accessed                  ;; number of sucessfully accessed services by healthy people
   constrained-accessed              ;; number of sucessfully accessed services by constrained people
   healthy-burden-total              ;; total travel burden for healthy people
@@ -34,6 +43,7 @@ globals
   access-scores                     ;; list of access outcome scores for all completed agents
 ]
 
+;; Agent types
 breed [healthy-peoples healthy-people]                ;; healthy people(s)
 breed [constrained-peoples constrained-people]        ;; constrained people(s)
 
@@ -42,12 +52,12 @@ turtles-own
   mobility-capacity                 ;; numbers - mobility capacity of a people
   travel-burden                     ;; numbers - travel burden of a people
   access-score                      ;; numbers 0-100 - accessibility score of a people
-  accessed?                         ;; boolean - whether the people accessed services
-  unable-to-access?                 ;; boolean - whether the people failed to access services
+  accessed?                         ;; boolean - whether the people accessed to the services patches
+  unable-to-access?                 ;; boolean - whether the people failed to access to the services patches
   recorded?                         ;; boolean - whether results have been recorded
-  using-vehicle?                    ;; boolean - whether the people were travelled with vehicle
-  eligible-exemption?               ;; boolean - whether the people were eligible for exemption
-  switched-to-walking?              ;; boolean - whether the people switched from vehicle use to walking
+  using-vehicle?                    ;; boolean - whether the people are travelling with vehicle
+  eligible-exemption?               ;; boolean - whether the people are eligible for exemption
+  switched-to-walking?              ;; boolean - whether the people switched from vehicle to walking
 ]
 
 patches-own
@@ -76,10 +86,12 @@ end
 ;; set default values
 ;;
 to set-defaults
+  ;; agent capacity and movement cost assumptions
   set healthy-capacity 200             ;; assumption for healthy people
   set healthy-move-cost 1              ;; assumption for healthy people
   set constrained-move-cost 3.5        ;; assumption to represent higher mobility cost (Wert et al., 2013)
-  set vehicle-move-cost 0.5
+  set vehicle-move-cost 0.5            ;;
+  ;; set coords for the simple road network
   set exemption-target-y 0
   set left-road-x -16
   set center-road-x 0
@@ -98,6 +110,7 @@ end
 ;; setup patches
 ;;
 to setup-patches
+  ;; empty patches first
   ask patches
   [
     set home? false
@@ -108,7 +121,7 @@ to setup-patches
     set horizontal-road? false
     set pcolor gray - 2
   ]
-  ;; create road network
+  ;; create road network, coloured as grey
   ask patches with
   [
     abs (pycor - top-road-y) <= road-width or
@@ -122,7 +135,7 @@ to setup-patches
     set road? true
     set pcolor gray + 1
   ]
-  ;; horizontal roads
+  ;; set horizontal roads
   ask patches with
   [
     abs (pycor - top-road-y) <= road-width or
@@ -132,7 +145,7 @@ to setup-patches
   [
     set horizontal-road? true
   ]
-  ;; create home patches on the left side of the world
+  ;; create home patches to be on the left side of the world
   ask patches with
   [
     road? and
@@ -142,7 +155,7 @@ to setup-patches
   [
     set home? true
   ]
-  ;; create service patches on the right side of the world
+  ;; create service patches to be on the right side of the world
   ask patches with
   [
     road? and
@@ -152,8 +165,9 @@ to setup-patches
   [
     set service? true
   ]
-  ;; create the vehicle restricted street corridor in the center
-  ;; this covers the full width of the centre road, not only pxcor = 0
+  ;; create a vehicle restricted corridor in the center road
+  ;; and the restricted corridor to be set as full width of the road across all scenarios
+  ;; create no vehicle restrictions for baseline scenario
   if scenario != "baseline"
   [
     ask patches with
@@ -166,8 +180,8 @@ to setup-patches
     ]
   ]
 
-  ;; create exemption crossing point in the individual exemption scenario
-  ;; this covers the full width of the restricted centre road corridor
+  ;; create exemption crossing patches in individual exemption scenario
+  ;; this covers the full width of the restricted centre road corridor as well, colour painted as yellow
   if scenario = "individual-exemption"
   [
     ask patches with
@@ -191,24 +205,24 @@ end
 to go
   ;; create new people entering the model
   create-access-flow
-  ;; move people who are still trying to access services
+  ;; move people by one step, check accessed or failed to access
   ask turtles with [not accessed? and not unable-to-access?]
   [
     move-one-step
     check-access
     check-failure
   ]
-  ;; allow failed people to leave the model
+  ;; failed people and results recorded to continue and leave the model
   ask turtles with [unable-to-access? and recorded?]
   [
     leave-after-access
   ]
-  ;; allow people who accessed services to leave the model
+  ;; people who accessed services to continue and leave the model
   ask turtles with [accessed?]
   [
     leave-after-access
   ]
-  ;; record people who failed to access services
+  ;; any found failed to access services to be recorded and coloured in red 
   ask turtles with [unable-to-access? and not recorded?]
   [
     set color red
@@ -240,10 +254,11 @@ end
 
 
 ;;
+;; create agents (people)
 ;; create healthy or mobility-constrained people
 ;;
 to create-person [person-type]
-  ;; people start only on horizontal road patches in the home area
+  ;; people start from unoccupied home patches on horizontal road
   let starts patches with
   [
     home? and
@@ -251,12 +266,12 @@ to create-person [person-type]
     abs (pxcor - left-road-x) <= road-width and
     not any? turtles-here
   ]
-
+  ;; don't create a new people if patch is unavailable
   if not any? starts
   [
     stop
   ]
-
+  ;; create healthy people as green
   if person-type = "healthy"
   [
     create-healthy-peoples 1
@@ -264,6 +279,8 @@ to create-person [person-type]
       initialise-person one-of starts green healthy-capacity
     ]
   ]
+  ;; create constrained people as orange
+  ;; capacity to be randomly selected between the selected range of min and max in Interface
   if person-type = "constrained"
   [
     create-constrained-peoples 1
@@ -281,15 +298,17 @@ end
 
 
 ;;
-;; initialise each person
+;; initialise people
 ;;
 to initialise-person [start-patch start-color capacity]
   move-to start-patch
-  set shape "person"
-  set size 1
+  ;; set appearance and outlooks of people
+  set shape "person"                    ;; agent (people) shape to look like person
+  set size 1                            ;; set people size
   set color start-color
-  set heading 90
-  set mobility-capacity capacity
+  set heading 90  
+  ;; reset the agent state variables
+  set mobility-capacity capacity       
   set travel-burden 0
   set access-score 0
   set accessed? false
@@ -298,7 +317,7 @@ to initialise-person [start-patch start-color capacity]
   set using-vehicle? false
   set eligible-exemption? false
   set switched-to-walking? false
-  ;; healthy people can only use vehicles in baseline
+  ;; healthy people to be can only use vehicles in baseline
   if breed = healthy-peoples
   [
     ;; 60 was chosen as "Both disabled and non-disabled adults made over 60% of all trips by car in 2023"
@@ -308,10 +327,10 @@ to initialise-person [start-patch start-color capacity]
       set using-vehicle? true
     ]
   ]
-  ;; constrained people use vehicle in baseline and exemption
+  ;; constrained people to be allowed to use vehicle in baseline and exemption
   if breed = constrained-peoples
   [
-    ;; choose around 70% as 29% of disabled adults lived in households without access to a car, compared with 16% of non-disabled adults
+    ;; 70% was chosen as 29% of disabled adults lived in households without access to a car
     ;; Source: https://www.gov.uk/government/statistics/disability-accessibility-and-blue-badge-scheme-statistics-2023-to-2024/disability-accessibility-and-blue-badge-statistics-england-2023-to-2024
     if random 100 < 70
     [
