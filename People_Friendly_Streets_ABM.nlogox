@@ -807,7 +807,7 @@ end]]></code>
     <slider x="25" step="1" y="200" max="200" width="250" display="constrained-min-capacity" height="50" min="0" direction="Horizontal" default="80.0" variable="constrained-min-capacity"></slider>
     <slider x="25" step="1" y="260" max="200" width="250" display="constrained-max-capacity" height="50" min="0" direction="Horizontal" default="180.0" variable="constrained-max-capacity"></slider>
     <slider x="25" step="5" y="320" max="100" width="250" display="exemption-uptake-rate" height="50" min="5" direction="Horizontal" default="65.0" variable="exemption-uptake-rate"></slider>
-    <slider x="25" step="1" y="380" max="500" width="250" display="max-active-population" height="50" min="0" direction="Horizontal" default="417.0" variable="max-active-population"></slider>
+    <slider x="25" step="1" y="380" max="500" width="250" display="max-active-population" height="50" min="0" direction="Horizontal" default="134.0" variable="max-active-population"></slider>
     <monitor x="860" precision="17" y="20" height="60" fontSize="11" width="150">count turtles</monitor>
     <monitor x="1020" precision="17" y="20" height="60" fontSize="11" width="145">accessibility-inequality</monitor>
     <monitor x="860" precision="17" y="90" height="60" fontSize="11" width="150">healthy-access-rate</monitor>
