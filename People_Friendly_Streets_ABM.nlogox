@@ -15,7 +15,6 @@
 
 globals
 [
-  healthy-capacity                  ;; mobility capacity for healthy people
   healthy-move-cost                 ;; movement cost per step for healthy people
   constrained-move-cost             ;; movement cost per step for constrained people
   vehicle-move-cost                 ;; movement cost per step for travelling with vehicle
@@ -26,8 +25,6 @@ globals
   top-road-y                        ;; y-coord of the top horizontal road
   middle-road-y                     ;; y-coord of the middle horizontal road
   bottom-road-y                     ;; y-coord of the bottom horizontal road
-  road-width                        ;; width for road corridor
-  zone-width                        ;; width of home and service zones
   access-records                    ;; list of completed journey records
 ]
 
@@ -77,9 +74,9 @@ end
 ;; set default values
 ;;
 to set-defaults
-  ;; agent capacity and movement cost assumptions
+  ;; movement cost assumptions
   set healthy-move-cost 1              ;; assumption for healthy people
-  set constrained-move-cost 2          ;; assumption to represent higher mobility cost (Wert et al., 2013)
+  set constrained-move-cost 2          ;; assumption to represent higher mobility cost for constrained people (i.e. chronic illness, fatigue, imparement, etc.) (Wert et al., 2013)
   set vehicle-move-cost 0.5            ;; assumption for cost of travelling by vehicle
   set mode-switch-cost 1.5             ;; add cost for switching between modes of transport
   ;; set coords for the simple road network
@@ -89,9 +86,6 @@ to set-defaults
   set top-road-y 12
   set middle-road-y 0
   set bottom-road-y -12
-  ;; set width for roads and origin/ destination zones
-  set road-width 1
-  set zone-width 0
   ;; reset accessed records
   set access-records []
 end
@@ -136,28 +130,26 @@ to setup-patches
   [
     set horizontal-road? true
   ]
-  ;; set origin home patches to be on the left side of the world
+  ;; set origin home patches on the left vertical road
   ask patches with
   [
     road? and
-    pxcor >= min-pxcor and
-    pxcor <= min-pxcor + zone-width
+    pxcor = left-road-x
   ]
   [
     set home? true
   ]
-  ;; set destination service patches to be on the right side of the world
+  
+  ;; set destination service patches on the right vertical road
   ask patches with
   [
     road? and
-    pxcor <= max-pxcor and
-    pxcor >= max-pxcor - zone-width
+    pxcor = right-road-x
   ]
   [
     set service? true
   ]
   ;; create a vehicle restricted corridor in the center road
-  ;; restricted corridor to be set as full width of the road across all scenarios
   ;; no vehicle restrictions set for baseline scenario
   if scenario != "baseline"
   [
@@ -170,9 +162,8 @@ to setup-patches
       set pcolor red
     ]
   ]
-  ;; create exemption point patches in individual exemption scenario
-  ;; this covers the full width of the restricted centre road corridor as well, colour painted as yellow
-  ;; represent multiple permitted exemption access across the restriction corridor
+  ;; create exemption point patches in individual exemption scenario, colour painted as yellow
+  ;; these represent multiple permitted exemption access across the restriction corridor
   if scenario = "individual-exemption"
   [
     ask patches with
@@ -202,7 +193,7 @@ to go
     check-access
     check-failure
   ]
-  ;; if failed and results recorded allow continue to move and leave the model
+  ;; if failed and results recorded continue to move and leave the model
   ask turtles with [failed-to-access? and recorded?]
   [
     leave-after-access
@@ -212,7 +203,7 @@ to go
   [
     leave-after-access
   ]
-  ;; any found failed to access services to be recorded and coloured in red
+  ;; any found failed to access services are recorded and coloured in red
   ask turtles with [failed-to-access? and not recorded?]
   [
     set color red
@@ -259,7 +250,6 @@ end
 ;; create healthy or mobility-constrained people
 ;;
 to create-person [people-type]
-  ;; people start from unoccupied home patches on horizontal road
   let starts patches with
   [
     home? and
@@ -363,7 +353,7 @@ end
 
 
 ;;
-;; move right towards services one patch each time
+;; move right towards services one patch
 ;;
 to move-right
   let target patch-at 1 0
@@ -442,7 +432,7 @@ to-report can-switch-to-walking? [target]
   [
     report false
   ]
-  ;; in the individual exemption scenario, eligible vehicle users will not switch to walking, continue with vehicle and pass through exemption patches
+  ;; in the individual-exemption scenario, eligible vehicle users do not switch to walking at restricted patches
   if scenario = "individual-exemption" and eligible-exemption?
   [
     report false
@@ -471,7 +461,7 @@ end
 
 
 ;;
-;; let people leave the world after accessing services
+;; let people accessed or recorded failed to access leave the world
 ;;
 to leave-after-access
   ;; colour in blue if accessed
@@ -486,7 +476,7 @@ to leave-after-access
     die
     stop
   ]
-  move-to target                                   ;; otherwise keep moving and leave the world 
+  move-to target                                   ;; otherwise keep moving towards right 
 end
 
 
@@ -647,12 +637,12 @@ to record-result
   ;; store healthy result
   if breed = healthy-peoples
   [
-    set access-records lput (list "healthy" accessed? travel-burden access-score eligible-exemption?) access-records
+    set access-records lput (list "healthy" accessed? travel-burden access-score eligible-exemption? switched-to-walking?) access-records
   ]
   ;; store constrained result
   if breed = constrained-peoples
   [
-    set access-records lput (list "constrained" accessed? travel-burden access-score eligible-exemption?) access-records
+    set access-records lput (list "constrained" accessed? travel-burden access-score eligible-exemption? switched-to-walking?) access-records
   ]
   ;; recorded
   set recorded? true
